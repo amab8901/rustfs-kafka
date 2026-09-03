@@ -131,17 +131,22 @@ tx.commit().unwrap();
 ```rust,no_run
 use std::time::Duration;
 use rustfs_kafka::client::{
-    AclBinding, AlterClientQuotasOptions, AlterPartitionReassignmentsOptions,
-    ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntityFilter, ClientQuotaEntitySpec,
-    ConfigResource, CreatePartitionsOptions, CreatePartitionsTopicSpec, DeleteRecordsPartitionSpec,
-    DeleteRecordsTopicSpec, DescribeAclsFilter, DescribeClientQuotasOptions,
-    DescribeTopicPartitionsOptions, IncrementalAlterConfig, IncrementalAlterConfigsOptions,
+    AclBinding, AlterClientQuotasOptions, AlterConfigsEntry, AlterConfigsOptions,
+    AlterConfigsResource, AlterPartitionReassignmentsOptions, AlterReplicaLogDir,
+    AlterReplicaLogDirTopic, AlterShareGroupOffsetPartition, AlterShareGroupOffsetTopic,
+    AlterUserScramCredentialsOptions, ClientQuotaAlteration, ClientQuotaAlterationOp,
+    ClientQuotaEntityFilter, ClientQuotaEntitySpec, ConfigResource, CreateDelegationTokenOptions,
+    CreatePartitionsOptions, CreatePartitionsTopicSpec, DeleteRecordsPartitionSpec,
+    DeleteRecordsTopicSpec, DeleteShareGroupOffsetTopic,
+    DescribeAclsFilter, DescribeClientQuotasOptions, DescribeTopicPartitionsOptions,
+    FeatureUpdate, IncrementalAlterConfig, IncrementalAlterConfigsOptions,
     IncrementalAlterConfigsResource, KafkaClient, KafkaPrincipal, LeaderEpochPartitionRequest,
     LeaderEpochTopicRequest, ListTransactionsOptions, PartitionReassignmentSpec,
-    PartitionReassignmentTopicSpec,
-    ShareGroupOffsetRequest, TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ,
-    ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
-    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_TOPIC,
+    PartitionReassignmentTopicSpec, SCRAM_MECHANISM_SHA_512, ScramCredentialUpsertion,
+    ShareGroupOffsetRequest, TopicPartitionFilter, TopicPartitionsCursor,
+    TxnOffsetCommitTopicPartition, ACL_OPERATION_READ, ACL_PATTERN_TYPE_LITERAL,
+    ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER,
+    CONFIG_RESOURCE_TYPE_TOPIC,
 };
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
@@ -269,6 +274,21 @@ let altered_configs = client
     .unwrap();
 println!("altered_config_resources={}", altered_configs.responses.len());
 
+#[allow(deprecated)]
+let legacy_config_update = client
+    .alter_configs(
+        &AlterConfigsOptions::new([AlterConfigsResource::topic(
+            "my-topic",
+            [AlterConfigsEntry::new("retention.ms", "60000")],
+        )])
+        .with_validate_only(true),
+    )
+    .unwrap();
+println!(
+    "legacy_config_update_resources={}",
+    legacy_config_update.responses.len()
+);
+
 let config_resources = client
     .list_config_resources_for(&[CONFIG_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER])
     .unwrap();
@@ -319,6 +339,14 @@ for log_dir in log_dirs.results {
         log_dir.topics.len()
     );
 }
+
+let moved_replicas = client
+    .alter_replica_log_dirs(&[AlterReplicaLogDir::new(
+        "/kafka-logs-2",
+        vec![AlterReplicaLogDirTopic::new("my-topic", [0, 1])],
+    )])
+    .unwrap();
+println!("moved_replica_topics={}", moved_replicas.results.len());
 
 let reassignments = client
     .list_partition_reassignments_for(&partitions, Duration::from_secs(10))
@@ -371,6 +399,19 @@ for token in tokens.tokens {
     println!("token_id={} renewers={}", token.token_id, token.renewers.len());
 }
 
+let created_token = client
+    .create_delegation_token(
+        &CreateDelegationTokenOptions::new()
+            .with_owner(KafkaPrincipal::user("alice"))
+            .with_renewer(KafkaPrincipal::user("bob"))
+            .with_max_lifetime_ms(86_400_000),
+    )
+    .unwrap();
+let renewed_token = client
+    .renew_delegation_token(&created_token.hmac, Duration::from_secs(3600))
+    .unwrap();
+println!("renewed_token_expiry={}", renewed_token.expiry_timestamp_ms);
+
 let quota_filter = DescribeClientQuotasOptions::new()
     .with_component(ClientQuotaEntityFilter::exact("user", "alice"));
 let quotas = client.describe_client_quotas_with_options(&quota_filter).unwrap();
@@ -399,6 +440,20 @@ for user in scram_credentials.results {
     println!("user={} credentials={}", user.user, user.credential_infos.len());
 }
 
+let scram_update = client
+    .alter_user_scram_credentials(
+        &AlterUserScramCredentialsOptions::new()
+            .with_upsertion(ScramCredentialUpsertion::new(
+                "alice",
+                SCRAM_MECHANISM_SHA_512,
+                8192,
+                bytes::Bytes::from_static(b"salt"),
+                bytes::Bytes::from_static(b"salted-password"),
+            )),
+    )
+    .unwrap();
+println!("scram_update_results={}", scram_update.results.len());
+
 let producers = client.describe_producers(&partitions).unwrap();
 for topic in producers.topics {
     println!("topic={} producer_partitions={}", topic.name, topic.partitions.len());
@@ -412,6 +467,25 @@ let share_offsets = client
 for group in share_offsets.groups {
     println!("share_group={} offset_topics={}", group.group_id, group.topics.len());
 }
+
+let altered_share_offsets = client
+    .alter_share_group_offsets(
+        "my-share-group",
+        &[AlterShareGroupOffsetTopic::new(
+            "my-topic",
+            [AlterShareGroupOffsetPartition::new(0, 42)],
+        )],
+    )
+    .unwrap();
+println!("altered_share_topics={}", altered_share_offsets.responses.len());
+
+let deleted_share_offsets = client
+    .delete_share_group_offsets(
+        "my-share-group",
+        &[DeleteShareGroupOffsetTopic::new("my-topic")],
+    )
+    .unwrap();
+println!("deleted_share_topics={}", deleted_share_offsets.responses.len());
 
 let transaction_filter = ListTransactionsOptions::new()
     .with_state_filters(["Ongoing"])
@@ -436,6 +510,28 @@ for transaction in described_transactions.transaction_states {
         transaction.topics.len()
     );
 }
+
+let txn_offsets = client
+    .add_offsets_to_txn("rustfs-txn-a", 42, 3, "consumer-group-a")
+    .unwrap();
+println!("add_offsets_to_txn_error={}", txn_offsets.error_code);
+
+let committed_txn_offsets = client
+    .txn_offset_commit(
+        "rustfs-txn-a",
+        "consumer-group-a",
+        42,
+        3,
+        &[TxnOffsetCommitTopicPartition::new("my-topic", 0, 123)],
+    )
+    .unwrap();
+println!("txn_offset_topics={}", committed_txn_offsets.topics.len());
+
+let feature_preview = client
+    .update_features(&[FeatureUpdate::upgrade("metadata.version", 20)], true)
+    .unwrap();
+println!("feature_update_results={}", feature_preview.results.len());
+
 ```
 
 Optional variants expose the highest fields currently wired from `kafka-protocol`:
@@ -455,9 +551,13 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `incremental_alter_configs(options)`
 - `list_config_resources_for(resource_types)`
 - `describe_delegation_tokens_for(owners)`
+- `create_delegation_token(options)`
+- `renew_delegation_token(hmac, renew_period)`
+- `expire_delegation_token(hmac, expiry_period)`
 - `create_partitions_with_options(options)`
 - `delete_records(topics, timeout)`
 - `describe_log_dirs_for(topic_partition_filters)`
+- `alter_replica_log_dirs(log_dirs)`
 - `delete_group_offsets(group, topic_partition_filters)`
 - `alter_partition_reassignments(options)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
@@ -469,7 +569,15 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_client_quotas_with_options(options)`
 - `alter_client_quotas(options)`
 - `describe_user_scram_credentials_for(users)`
+- `alter_user_scram_credentials(options)`
 - `list_transactions_with_options(options)`
+- `add_offsets_to_txn(transactional_id, producer_id, producer_epoch, group_id)`
+- `txn_offset_commit(transactional_id, group_id, producer_id, producer_epoch, offsets)`
+- `alter_share_group_offsets(group_id, topics)`
+- `delete_share_group_offsets(group_id, topics)`
+- `update_features(feature_updates, validate_only)`
+- `unregister_broker(broker_id)` for explicitly planned KRaft broker removal.
+- `alter_configs(options)` is deprecated; prefer `incremental_alter_configs(options)`.
 
 ### 4.3 Topic create/delete
 

@@ -30,13 +30,21 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `describe_client_quotas` / `describe_client_quotas_with_options`
   - `alter_client_quotas`
   - `describe_user_scram_credentials` / `describe_user_scram_credentials_for`
+  - `alter_user_scram_credentials`
   - `describe_producers`
   - `list_transactions` / `list_transactions_with_options`
   - `describe_transactions`
+  - `add_offsets_to_txn`
+  - `txn_offset_commit`
   - `describe_topic_partitions` / `describe_topic_partitions_with_options`
   - `describe_consumer_groups` / `describe_consumer_groups_with_options`
   - `describe_share_groups` / `describe_share_groups_with_options`
   - `describe_share_group_offsets` / `describe_share_group_offsets_with_options`
+  - `alter_share_group_offsets`
+  - `delete_share_group_offsets`
+  - `alter_replica_log_dirs`
+  - `update_features`
+  - `unregister_broker`
   - `list_groups` / `list_groups_with_filters`
   - `delete_groups`
   - `describe_groups` / `describe_groups_with_options`
@@ -46,8 +54,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   results, config mutation results, delegation tokens, log directory diagnostics, KRaft quorum state, topic partition
   discovery, partition reassignments, partition reassignment mutations, partition expansion, record deletion,
   leader election, leader-epoch offset lookup, client quotas, client quota mutation results, SCRAM credential metadata,
-  active producers, transactions,
-  committed-offset deletion results, modern consumer group descriptions, share group descriptions, and share group offsets.
+  SCRAM credential mutation results, active producers, transactions, transactional offset commit results,
+  committed-offset deletion results, modern consumer group descriptions, share group descriptions, share group offsets,
+  share group offset mutation results, cluster feature updates, and KRaft broker lifecycle operations.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 - Added `docs/protocol-coverage.md` to track `kafka-protocol` `0.18.0` API coverage and prioritize remaining
   client-facing protocol work.
@@ -74,6 +83,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Deprecated
 
+- Deprecated `KafkaClient::alter_configs`; use `KafkaClient::incremental_alter_configs` for new config mutations.
 - Deprecated async builder compatibility toggles that are ignored by the native async implementation:
   - `AsyncProducerBuilder::with_channel_capacity`
   - `AsyncProducerBuilder::with_native_async`

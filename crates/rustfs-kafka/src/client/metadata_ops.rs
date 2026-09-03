@@ -121,24 +121,19 @@ pub fn fetch_offsets_kp<T: AsRef<str>>(
             .conn_pool
             .get_conn(host, now)
             .map_err(|e| e.with_broker_context(host, "ListOffsets"))?;
-        let (header, request) = crate::protocol::offset::build_list_offsets_request(
+        let (header, request) = protocol::offset::build_list_offsets_request(
             correlation,
             &config.client_id,
             &partitions,
         );
-        transport::kp_send_request(
-            conn,
-            &header,
-            &request,
-            crate::protocol::API_VERSION_LIST_OFFSETS,
-        )
-        .map_err(|e| e.with_broker_context(host, "ListOffsets"))?;
+        transport::kp_send_request(conn, &header, &request, protocol::API_VERSION_LIST_OFFSETS)
+            .map_err(|e| e.with_broker_context(host, "ListOffsets"))?;
         let kp_resp = transport::kp_get_response::<kafka_protocol::messages::ListOffsetsResponse>(
             conn,
-            crate::protocol::API_VERSION_LIST_OFFSETS,
+            protocol::API_VERSION_LIST_OFFSETS,
         )
         .map_err(|e| e.with_broker_context(host, "ListOffsets"))?;
-        let our_resp = crate::protocol::offset::convert_list_offsets_response(kp_resp, correlation);
+        let our_resp = protocol::offset::convert_list_offsets_response(kp_resp, correlation);
 
         for tp in our_resp.topic_partitions {
             let mut entry = res.entry(tp.topic);
@@ -185,7 +180,7 @@ fn fetch_metadata_kp<T: AsRef<str>>(
 ) -> Result<protocol::metadata::MetadataResponseData> {
     let correlation = client.state.next_correlation_id();
     let now = Instant::now();
-    let topic_strs: Vec<&str> = topics.iter().map(std::convert::AsRef::as_ref).collect();
+    let topic_strs: Vec<&str> = topics.iter().map(AsRef::as_ref).collect();
 
     for host in &client.config.hosts {
         debug!("fetch_metadata_kp: requesting metadata from {}", host);
@@ -193,7 +188,7 @@ fn fetch_metadata_kp<T: AsRef<str>>(
             Ok(conn) => {
                 if !client.api_versions.contains(host) {
                     let av_correlation = client.state.next_correlation_id();
-                    match crate::protocol::api_versions::fetch_api_versions(
+                    match protocol::api_versions::fetch_api_versions(
                         conn,
                         av_correlation,
                         &client.config.client_id,
@@ -208,7 +203,7 @@ fn fetch_metadata_kp<T: AsRef<str>>(
                     }
                 }
 
-                let (header, request) = crate::protocol::metadata::build_metadata_request(
+                let (header, request) = protocol::metadata::build_metadata_request(
                     correlation,
                     &client.config.client_id,
                     if topic_strs.is_empty() {
@@ -221,15 +216,15 @@ fn fetch_metadata_kp<T: AsRef<str>>(
                     conn,
                     &header,
                     &request,
-                    crate::protocol::API_VERSION_METADATA,
+                    protocol::API_VERSION_METADATA,
                 ) {
                     Ok(()) => {
                         match transport::kp_get_response::<kafka_protocol::messages::MetadataResponse>(
                             conn,
-                            crate::protocol::API_VERSION_METADATA,
+                            protocol::API_VERSION_METADATA,
                         ) {
                             Ok(kp_resp) => {
-                                return Ok(crate::protocol::metadata::convert_metadata_response(
+                                return Ok(protocol::metadata::convert_metadata_response(
                                     kp_resp,
                                     correlation,
                                 ));

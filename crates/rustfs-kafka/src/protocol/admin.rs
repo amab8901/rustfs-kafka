@@ -2,11 +2,17 @@
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    AlterClientQuotasRequest, AlterClientQuotasResponse, AlterPartitionReassignmentsRequest,
-    AlterPartitionReassignmentsResponse, ApiKey, ConsumerGroupDescribeRequest,
-    ConsumerGroupDescribeResponse, CreateAclsRequest, CreateAclsResponse, CreatePartitionsRequest,
+    AddOffsetsToTxnRequest, AddOffsetsToTxnResponse, AlterClientQuotasRequest,
+    AlterClientQuotasResponse, AlterConfigsRequest, AlterConfigsResponse,
+    AlterPartitionReassignmentsRequest, AlterPartitionReassignmentsResponse,
+    AlterReplicaLogDirsRequest, AlterReplicaLogDirsResponse, AlterShareGroupOffsetsRequest,
+    AlterShareGroupOffsetsResponse, AlterUserScramCredentialsRequest,
+    AlterUserScramCredentialsResponse, ApiKey, ConsumerGroupDescribeRequest,
+    ConsumerGroupDescribeResponse, CreateAclsRequest, CreateAclsResponse,
+    CreateDelegationTokenRequest, CreateDelegationTokenResponse, CreatePartitionsRequest,
     CreatePartitionsResponse, DeleteAclsRequest, DeleteAclsResponse, DeleteGroupsRequest,
-    DeleteGroupsResponse, DeleteRecordsRequest, DeleteRecordsResponse, DescribeAclsRequest,
+    DeleteGroupsResponse, DeleteRecordsRequest, DeleteRecordsResponse,
+    DeleteShareGroupOffsetsRequest, DeleteShareGroupOffsetsResponse, DescribeAclsRequest,
     DescribeAclsResponse, DescribeClientQuotasRequest, DescribeClientQuotasResponse,
     DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
     DescribeConfigsResponse, DescribeDelegationTokenRequest, DescribeDelegationTokenResponse,
@@ -15,30 +21,39 @@ use kafka_protocol::messages::{
     DescribeQuorumResponse, DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
     DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse, DescribeTransactionsRequest,
     DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
-    DescribeUserScramCredentialsResponse, ElectLeadersRequest, ElectLeadersResponse, GroupId,
+    DescribeUserScramCredentialsResponse, ElectLeadersRequest, ElectLeadersResponse,
+    ExpireDelegationTokenRequest, ExpireDelegationTokenResponse, GroupId,
     IncrementalAlterConfigsRequest, IncrementalAlterConfigsResponse, ListConfigResourcesRequest,
     ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
     ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
     ListTransactionsResponse, OffsetDeleteRequest, OffsetDeleteResponse,
-    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, RequestHeader,
-    ShareGroupDescribeRequest, ShareGroupDescribeResponse,
+    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProducerId,
+    RenewDelegationTokenRequest, RenewDelegationTokenResponse, RequestHeader,
+    ShareGroupDescribeRequest, ShareGroupDescribeResponse, TxnOffsetCommitRequest,
+    TxnOffsetCommitResponse, UnregisterBrokerRequest, UnregisterBrokerResponse,
+    UpdateFeaturesRequest, UpdateFeaturesResponse,
 };
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
-    API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
-    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS,
-    API_VERSION_DELETE_ACLS, API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS,
+    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_CONFIGS,
+    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_ALTER_REPLICA_LOG_DIRS,
+    API_VERSION_ALTER_SHARE_GROUP_OFFSETS, API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS,
+    API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
+    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
     API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
     API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
     API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
     API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
     API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
     API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_ELECT_LEADERS,
-    API_VERSION_INCREMENTAL_ALTER_CONFIGS, API_VERSION_LIST_CONFIG_RESOURCES,
-    API_VERSION_LIST_GROUPS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-    API_VERSION_LIST_TRANSACTIONS, API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
-    API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_EXPIRE_DELEGATION_TOKEN, API_VERSION_INCREMENTAL_ALTER_CONFIGS,
+    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
+    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+    API_VERSION_RENEW_DELEGATION_TOKEN, API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER, API_VERSION_UPDATE_FEATURES,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -2092,6 +2107,111 @@ pub struct DescribeDelegationTokenResponseData {
     pub throttle_time_ms: i32,
 }
 
+/// Options for creating a Kafka delegation token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateDelegationTokenOptions {
+    /// Optional owner principal; Kafka defaults this to the request principal when absent.
+    pub owner: Option<KafkaPrincipal>,
+    /// Principals allowed to renew the token.
+    pub renewers: Vec<KafkaPrincipal>,
+    /// Maximum token lifetime in milliseconds, or `-1` to use the broker default.
+    pub max_lifetime_ms: i64,
+}
+
+impl Default for CreateDelegationTokenOptions {
+    fn default() -> Self {
+        Self {
+            owner: None,
+            renewers: Vec::new(),
+            max_lifetime_ms: -1,
+        }
+    }
+}
+
+impl CreateDelegationTokenOptions {
+    /// Create options using Kafka's broker-side defaults.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the token owner principal.
+    #[must_use]
+    pub fn with_owner(mut self, owner: KafkaPrincipal) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    /// Add one token renewer principal.
+    #[must_use]
+    pub fn with_renewer(mut self, renewer: KafkaPrincipal) -> Self {
+        self.renewers.push(renewer);
+        self
+    }
+
+    /// Replace the token renewer principals.
+    #[must_use]
+    pub fn with_renewers<I>(mut self, renewers: I) -> Self
+    where
+        I: IntoIterator<Item = KafkaPrincipal>,
+    {
+        self.renewers = renewers.into_iter().collect();
+        self
+    }
+
+    /// Set the maximum token lifetime in milliseconds.
+    #[must_use]
+    pub fn with_max_lifetime_ms(mut self, max_lifetime_ms: i64) -> Self {
+        self.max_lifetime_ms = max_lifetime_ms;
+        self
+    }
+}
+
+/// Parsed response from a `CreateDelegationToken` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateDelegationTokenResponseData {
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Owner principal for the token.
+    pub owner: KafkaPrincipal,
+    /// Requester principal returned by Kafka v3+.
+    pub requester: Option<KafkaPrincipal>,
+    /// Token issue timestamp in milliseconds since Unix epoch.
+    pub issue_timestamp: i64,
+    /// Token expiry timestamp in milliseconds since Unix epoch.
+    pub expiry_timestamp: i64,
+    /// Token maximum timestamp in milliseconds since Unix epoch.
+    pub max_timestamp: i64,
+    /// Token ID.
+    pub token_id: String,
+    /// Broker-provided token HMAC. Treat this value as sensitive credential material.
+    pub hmac: Bytes,
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+}
+
+/// Parsed response from a `RenewDelegationToken` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewDelegationTokenResponseData {
+    /// Broker error code.
+    pub error_code: i16,
+    /// Token expiry timestamp in milliseconds since Unix epoch.
+    pub expiry_timestamp_ms: i64,
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+}
+
+/// Parsed response from an `ExpireDelegationToken` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpireDelegationTokenResponseData {
+    /// Broker error code.
+    pub error_code: i16,
+    /// Token expiry timestamp in milliseconds since Unix epoch.
+    pub expiry_timestamp_ms: i64,
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+}
+
 /// One entity component returned by `DescribeClientQuotas`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientQuotaEntity {
@@ -2185,6 +2305,132 @@ pub struct DescribeUserScramCredentialsResponseData {
     pub error_message: Option<String>,
     /// User credential descriptions returned by the broker.
     pub results: Vec<UserScramCredentialsDescription>,
+}
+
+/// SCRAM credential deletion operation for one user/mechanism.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScramCredentialDeletion {
+    /// User name.
+    pub name: String,
+    /// Raw Kafka SCRAM mechanism code.
+    pub mechanism: i8,
+}
+
+impl ScramCredentialDeletion {
+    /// Create a SCRAM credential deletion.
+    #[must_use]
+    pub fn new(name: impl Into<String>, mechanism: i8) -> Self {
+        Self {
+            name: name.into(),
+            mechanism,
+        }
+    }
+}
+
+/// SCRAM credential upsertion operation for one user/mechanism.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScramCredentialUpsertion {
+    /// User name.
+    pub name: String,
+    /// Raw Kafka SCRAM mechanism code.
+    pub mechanism: i8,
+    /// SCRAM iteration count.
+    pub iterations: i32,
+    /// Client-generated salt bytes.
+    pub salt: Bytes,
+    /// Precomputed salted password bytes for the selected SCRAM mechanism.
+    pub salted_password: Bytes,
+}
+
+impl ScramCredentialUpsertion {
+    /// Create a SCRAM credential upsertion with precomputed salted password material.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        mechanism: i8,
+        iterations: i32,
+        salt: impl Into<Bytes>,
+        salted_password: impl Into<Bytes>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            mechanism,
+            iterations,
+            salt: salt.into(),
+            salted_password: salted_password.into(),
+        }
+    }
+}
+
+/// Options for an `AlterUserScramCredentials` request.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AlterUserScramCredentialsOptions {
+    /// SCRAM credentials to delete.
+    pub deletions: Vec<ScramCredentialDeletion>,
+    /// SCRAM credentials to upsert.
+    pub upsertions: Vec<ScramCredentialUpsertion>,
+}
+
+impl AlterUserScramCredentialsOptions {
+    /// Create empty SCRAM credential mutation options.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add one SCRAM credential deletion.
+    #[must_use]
+    pub fn with_deletion(mut self, deletion: ScramCredentialDeletion) -> Self {
+        self.deletions.push(deletion);
+        self
+    }
+
+    /// Replace SCRAM credential deletions.
+    #[must_use]
+    pub fn with_deletions<I>(mut self, deletions: I) -> Self
+    where
+        I: IntoIterator<Item = ScramCredentialDeletion>,
+    {
+        self.deletions = deletions.into_iter().collect();
+        self
+    }
+
+    /// Add one SCRAM credential upsertion.
+    #[must_use]
+    pub fn with_upsertion(mut self, upsertion: ScramCredentialUpsertion) -> Self {
+        self.upsertions.push(upsertion);
+        self
+    }
+
+    /// Replace SCRAM credential upsertions.
+    #[must_use]
+    pub fn with_upsertions<I>(mut self, upsertions: I) -> Self
+    where
+        I: IntoIterator<Item = ScramCredentialUpsertion>,
+    {
+        self.upsertions = upsertions.into_iter().collect();
+        self
+    }
+}
+
+/// Per-user result returned by `AlterUserScramCredentials`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterUserScramCredentialResult {
+    /// User name.
+    pub user: String,
+    /// Per-user broker error code.
+    pub error_code: i16,
+    /// Optional per-user broker error message.
+    pub error_message: Option<String>,
+}
+
+/// Parsed response from an `AlterUserScramCredentials` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterUserScramCredentialsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-user mutation results returned by the broker.
+    pub results: Vec<AlterUserScramCredentialResult>,
 }
 
 /// State for one active producer returned by `DescribeProducers`.
@@ -2296,6 +2542,482 @@ pub struct DescribeTransactionsResponseData {
     pub throttle_time_ms: i32,
     /// Detailed transaction states returned by the broker.
     pub transaction_states: Vec<DescribedTransaction>,
+}
+
+/// Parsed response from an `AddOffsetsToTxn` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddOffsetsToTxnResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Broker error code.
+    pub error_code: i16,
+}
+
+/// Per-partition result in a `TxnOffsetCommit` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TxnOffsetCommitPartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+}
+
+/// Per-topic result in a `TxnOffsetCommit` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TxnOffsetCommitTopicResult {
+    /// Topic name.
+    pub topic: String,
+    /// Per-partition commit results.
+    pub partitions: Vec<TxnOffsetCommitPartitionResult>,
+}
+
+/// Parsed response from a `TxnOffsetCommit` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TxnOffsetCommitResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-topic offset commit results.
+    pub topics: Vec<TxnOffsetCommitTopicResult>,
+}
+
+/// A topic/partition/offset tuple for `TxnOffsetCommit`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TxnOffsetCommitTopicPartition {
+    /// Topic name.
+    pub topic: String,
+    /// Partition index.
+    pub partition: i32,
+    /// Offset to commit.
+    pub offset: i64,
+    /// Optional leader epoch.
+    pub leader_epoch: Option<i32>,
+    /// Optional metadata string.
+    pub metadata: Option<String>,
+}
+
+impl TxnOffsetCommitTopicPartition {
+    /// Create a transactional offset commit entry.
+    #[must_use]
+    pub fn new(topic: impl Into<String>, partition: i32, offset: i64) -> Self {
+        Self {
+            topic: topic.into(),
+            partition,
+            offset,
+            leader_epoch: None,
+            metadata: None,
+        }
+    }
+
+    /// Set the committed leader epoch.
+    #[must_use]
+    pub fn with_leader_epoch(mut self, leader_epoch: i32) -> Self {
+        self.leader_epoch = Some(leader_epoch);
+        self
+    }
+
+    /// Set committed offset metadata.
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: impl Into<String>) -> Self {
+        self.metadata = Some(metadata.into());
+        self
+    }
+}
+
+/// Upgrade type for `UpdateFeatures`: upgrade only (default).
+pub const FEATURE_UPGRADE_TYPE_UPGRADE: i8 = 1;
+/// Upgrade type for `UpdateFeatures`: safe downgrade only (lossless).
+pub const FEATURE_UPGRADE_TYPE_SAFE_DOWNGRADE: i8 = 2;
+/// Upgrade type for `UpdateFeatures`: unsafe downgrade (lossy).
+pub const FEATURE_UPGRADE_TYPE_UNSAFE_DOWNGRADE: i8 = 3;
+
+/// A feature to update via `UpdateFeatures`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureUpdate {
+    /// The feature name to update.
+    pub feature: String,
+    /// The new maximum version level.
+    pub max_version_level: i16,
+    /// The upgrade type (1=upgrade, 2=safe downgrade, 3=unsafe downgrade).
+    pub upgrade_type: i8,
+}
+
+impl FeatureUpdate {
+    /// Create a feature upgrade.
+    #[must_use]
+    pub fn upgrade(feature: impl Into<String>, max_version_level: i16) -> Self {
+        Self {
+            feature: feature.into(),
+            max_version_level,
+            upgrade_type: FEATURE_UPGRADE_TYPE_UPGRADE,
+        }
+    }
+
+    /// Create a safe (lossless) downgrade.
+    #[must_use]
+    pub fn safe_downgrade(feature: impl Into<String>, max_version_level: i16) -> Self {
+        Self {
+            feature: feature.into(),
+            max_version_level,
+            upgrade_type: FEATURE_UPGRADE_TYPE_SAFE_DOWNGRADE,
+        }
+    }
+
+    /// Create an unsafe (lossy) downgrade.
+    #[must_use]
+    pub fn unsafe_downgrade(feature: impl Into<String>, max_version_level: i16) -> Self {
+        Self {
+            feature: feature.into(),
+            max_version_level,
+            upgrade_type: FEATURE_UPGRADE_TYPE_UNSAFE_DOWNGRADE,
+        }
+    }
+}
+
+/// Per-feature result from `UpdateFeatures`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateFeaturesResult {
+    /// The feature name.
+    pub feature: String,
+    /// Per-feature broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Parsed response from an `UpdateFeatures` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateFeaturesResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level error code.
+    pub error_code: i16,
+    /// Optional top-level error message.
+    pub error_message: Option<String>,
+    /// Per-feature update results.
+    pub results: Vec<UpdateFeaturesResult>,
+}
+
+/// Parsed response from an `UnregisterBroker` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnregisterBrokerResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// A partition offset to alter for a share group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterShareGroupOffsetPartition {
+    /// Partition index.
+    pub partition_index: i32,
+    /// The new offset value.
+    pub offset: i64,
+}
+
+impl AlterShareGroupOffsetPartition {
+    /// Create a partition offset spec.
+    #[must_use]
+    pub fn new(partition_index: i32, offset: i64) -> Self {
+        Self {
+            partition_index,
+            offset,
+        }
+    }
+}
+
+/// A topic with partition offsets for `AlterShareGroupOffsets`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterShareGroupOffsetTopic {
+    /// Topic name.
+    pub topic_name: String,
+    /// Partition offsets to alter.
+    pub partitions: Vec<AlterShareGroupOffsetPartition>,
+}
+
+impl AlterShareGroupOffsetTopic {
+    /// Create a topic with partition offsets.
+    #[must_use]
+    pub fn new<I>(topic_name: impl Into<String>, partitions: I) -> Self
+    where
+        I: IntoIterator<Item = AlterShareGroupOffsetPartition>,
+    {
+        Self {
+            topic_name: topic_name.into(),
+            partitions: partitions.into_iter().collect(),
+        }
+    }
+}
+
+/// A partition result in `AlterShareGroupOffsets` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterShareGroupOffsetPartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// A topic result in `AlterShareGroupOffsets` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterShareGroupOffsetTopicResult {
+    /// Topic name.
+    pub topic_name: String,
+    /// Per-partition results.
+    pub partitions: Vec<AlterShareGroupOffsetPartitionResult>,
+}
+
+/// Parsed response from an `AlterShareGroupOffsets` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterShareGroupOffsetsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level error code.
+    pub error_code: i16,
+    /// Optional top-level error message.
+    pub error_message: Option<String>,
+    /// Per-topic results.
+    pub responses: Vec<AlterShareGroupOffsetTopicResult>,
+}
+
+/// A topic whose share-group offsets are deleted by `DeleteShareGroupOffsets`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteShareGroupOffsetTopic {
+    /// Topic name.
+    pub topic_name: String,
+}
+
+impl DeleteShareGroupOffsetTopic {
+    /// Create a topic whose share-group offsets should be deleted.
+    #[must_use]
+    pub fn new(topic_name: impl Into<String>) -> Self {
+        Self {
+            topic_name: topic_name.into(),
+        }
+    }
+}
+
+/// A topic result in `DeleteShareGroupOffsets` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteShareGroupOffsetTopicResult {
+    /// Topic name.
+    pub topic_name: String,
+    /// Per-topic broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Parsed response from a `DeleteShareGroupOffsets` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteShareGroupOffsetsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level error code.
+    pub error_code: i16,
+    /// Optional top-level error message.
+    pub error_message: Option<String>,
+    /// Per-topic results.
+    pub responses: Vec<DeleteShareGroupOffsetTopicResult>,
+}
+
+/// A config key-value pair for the legacy `AlterConfigs` API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterConfigsEntry {
+    /// Configuration key name.
+    pub name: String,
+    /// Configuration value, or `None` to reset to default.
+    pub value: Option<String>,
+}
+
+impl AlterConfigsEntry {
+    /// Create a config entry with a value.
+    #[must_use]
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: Some(value.into()),
+        }
+    }
+
+    /// Create a config entry that resets to default.
+    #[must_use]
+    pub fn reset(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: None,
+        }
+    }
+}
+
+/// One resource for the legacy `AlterConfigs` API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterConfigsResource {
+    /// Kafka config resource type.
+    pub resource_type: i8,
+    /// Resource name, such as a topic name or broker ID.
+    pub resource_name: String,
+    /// Config entries to apply.
+    pub configs: Vec<AlterConfigsEntry>,
+}
+
+impl AlterConfigsResource {
+    /// Create a config resource with a raw Kafka resource type.
+    #[must_use]
+    pub fn new<I>(resource_type: i8, resource_name: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = AlterConfigsEntry>,
+    {
+        Self {
+            resource_type,
+            resource_name: resource_name.into(),
+            configs: configs.into_iter().collect(),
+        }
+    }
+
+    /// Create a topic config resource.
+    #[must_use]
+    pub fn topic<I>(name: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = AlterConfigsEntry>,
+    {
+        Self::new(CONFIG_RESOURCE_TYPE_TOPIC, name, configs)
+    }
+
+    /// Create a broker config resource.
+    #[must_use]
+    pub fn broker<I>(id: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = AlterConfigsEntry>,
+    {
+        Self::new(CONFIG_RESOURCE_TYPE_BROKER, id, configs)
+    }
+}
+
+/// Options for a legacy `AlterConfigs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterConfigsOptions {
+    /// Resources to update.
+    pub resources: Vec<AlterConfigsResource>,
+    /// Validate the request without applying it.
+    pub validate_only: bool,
+}
+
+impl AlterConfigsOptions {
+    /// Create options with the supplied resources.
+    #[must_use]
+    pub fn new<I>(resources: I) -> Self
+    where
+        I: IntoIterator<Item = AlterConfigsResource>,
+    {
+        Self {
+            resources: resources.into_iter().collect(),
+            validate_only: false,
+        }
+    }
+
+    /// Validate the request without applying it.
+    #[must_use]
+    pub fn with_validate_only(mut self, validate_only: bool) -> Self {
+        self.validate_only = validate_only;
+        self
+    }
+}
+
+/// Per-resource result returned by the legacy `AlterConfigs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterConfigsResourceResult {
+    /// Per-resource broker error code.
+    pub error_code: i16,
+    /// Optional per-resource broker error message.
+    pub error_message: Option<String>,
+    /// Kafka config resource type.
+    pub resource_type: i8,
+    /// Resource name.
+    pub resource_name: String,
+}
+
+/// Parsed response from a legacy `AlterConfigs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterConfigsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-resource config mutation results.
+    pub responses: Vec<AlterConfigsResourceResult>,
+}
+
+/// A log directory path with topic partitions to move.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterReplicaLogDirTopic {
+    /// Topic name.
+    pub topic: String,
+    /// Partition indexes to move.
+    pub partitions: Vec<i32>,
+}
+
+impl AlterReplicaLogDirTopic {
+    /// Create a topic partition spec for log dir alteration.
+    #[must_use]
+    pub fn new<I>(topic: impl Into<String>, partitions: I) -> Self
+    where
+        I: IntoIterator<Item = i32>,
+    {
+        Self {
+            topic: topic.into(),
+            partitions: partitions.into_iter().collect(),
+        }
+    }
+}
+
+/// A log directory with topic partitions to move there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterReplicaLogDir {
+    /// Absolute directory path.
+    pub path: String,
+    /// Topics with partitions to move to this directory.
+    pub topics: Vec<AlterReplicaLogDirTopic>,
+}
+
+impl AlterReplicaLogDir {
+    /// Create a log directory spec.
+    #[must_use]
+    pub fn new(path: impl Into<String>, topics: Vec<AlterReplicaLogDirTopic>) -> Self {
+        Self {
+            path: path.into(),
+            topics,
+        }
+    }
+}
+
+/// Per-partition result in an `AlterReplicaLogDirs` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterReplicaLogDirPartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+}
+
+/// Per-topic result in an `AlterReplicaLogDirs` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterReplicaLogDirTopicResult {
+    /// Topic name.
+    pub topic_name: String,
+    /// Per-partition results.
+    pub partitions: Vec<AlterReplicaLogDirPartitionResult>,
+}
+
+/// Parsed response from an `AlterReplicaLogDirs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterReplicaLogDirsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-topic results.
+    pub results: Vec<AlterReplicaLogDirTopicResult>,
 }
 
 /// Build a `DescribeCluster` request.
@@ -2577,6 +3299,92 @@ pub fn build_incremental_alter_configs_request(
     let request = IncrementalAlterConfigsRequest::default()
         .with_resources(resources)
         .with_validate_only(options.validate_only);
+
+    (header, request)
+}
+
+/// Build a legacy `AlterConfigs` request.
+pub fn build_alter_configs_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &AlterConfigsOptions,
+) -> (RequestHeader, AlterConfigsRequest) {
+    use kafka_protocol::messages::alter_configs_request::AlterConfigsResource as KpAlterConfigsResource;
+    use kafka_protocol::messages::alter_configs_request::AlterableConfig as KpAlterableConfig;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AlterConfigs,
+        API_VERSION_ALTER_CONFIGS,
+    );
+    let resources: Vec<KpAlterConfigsResource> = options
+        .resources
+        .iter()
+        .map(|resource| {
+            KpAlterConfigsResource::default()
+                .with_resource_type(resource.resource_type)
+                .with_resource_name(StrBytes::from_string(resource.resource_name.clone()))
+                .with_configs(
+                    resource
+                        .configs
+                        .iter()
+                        .map(|config| {
+                            KpAlterableConfig::default()
+                                .with_name(StrBytes::from_string(config.name.clone()))
+                                .with_value(
+                                    config
+                                        .value
+                                        .as_deref()
+                                        .map(|v| StrBytes::from_string(v.to_owned())),
+                                )
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = AlterConfigsRequest::default()
+        .with_resources(resources)
+        .with_validate_only(options.validate_only);
+
+    (header, request)
+}
+
+/// Build an `AlterReplicaLogDirs` request.
+pub fn build_alter_replica_log_dirs_request(
+    correlation_id: i32,
+    client_id: &str,
+    dirs: &[AlterReplicaLogDir],
+) -> (RequestHeader, AlterReplicaLogDirsRequest) {
+    use kafka_protocol::messages::alter_replica_log_dirs_request::{
+        AlterReplicaLogDir as KpAlterReplicaLogDir,
+        AlterReplicaLogDirTopic as KpAlterReplicaLogDirTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AlterReplicaLogDirs,
+        API_VERSION_ALTER_REPLICA_LOG_DIRS,
+    );
+    let log_dirs: Vec<KpAlterReplicaLogDir> = dirs
+        .iter()
+        .map(|dir| {
+            KpAlterReplicaLogDir::default()
+                .with_path(StrBytes::from_string(dir.path.clone()))
+                .with_topics(
+                    dir.topics
+                        .iter()
+                        .map(|topic| {
+                            KpAlterReplicaLogDirTopic::default()
+                                .with_name(StrBytes::from_string(topic.topic.clone()).into())
+                                .with_partitions(topic.partitions.clone())
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = AlterReplicaLogDirsRequest::default().with_dirs(log_dirs);
 
     (header, request)
 }
@@ -3309,6 +4117,347 @@ pub fn build_describe_transactions_request(
     (header, request)
 }
 
+/// Build an `AddOffsetsToTxn` request.
+pub fn build_add_offsets_to_txn_request(
+    correlation_id: i32,
+    client_id: &str,
+    txn_id: &str,
+    producer_id: i64,
+    producer_epoch: i16,
+    group_id_str: &str,
+) -> (RequestHeader, AddOffsetsToTxnRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AddOffsetsToTxn,
+        API_VERSION_ADD_OFFSETS_TO_TXN,
+    );
+    let request = AddOffsetsToTxnRequest::default()
+        .with_transactional_id(transactional_id(txn_id))
+        .with_producer_id(ProducerId::from(producer_id))
+        .with_producer_epoch(producer_epoch)
+        .with_group_id(group_id(group_id_str));
+
+    (header, request)
+}
+
+/// Build a `TxnOffsetCommit` request.
+pub fn build_txn_offset_commit_request(
+    correlation_id: i32,
+    client_id: &str,
+    txn_id: &str,
+    group_id_str: &str,
+    producer_id: i64,
+    producer_epoch: i16,
+    topics: &[TxnOffsetCommitTopicPartition],
+) -> (RequestHeader, TxnOffsetCommitRequest) {
+    use kafka_protocol::messages::txn_offset_commit_request::{
+        TxnOffsetCommitRequestPartition, TxnOffsetCommitRequestTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::TxnOffsetCommit,
+        API_VERSION_TXN_OFFSET_COMMIT,
+    );
+
+    // Group topics by name
+    let mut topic_map: std::collections::BTreeMap<String, Vec<&TxnOffsetCommitTopicPartition>> =
+        std::collections::BTreeMap::new();
+    for tp in topics {
+        topic_map.entry(tp.topic.clone()).or_default().push(tp);
+    }
+
+    let topic_list: Vec<TxnOffsetCommitRequestTopic> = topic_map
+        .into_iter()
+        .map(|(name, partitions)| {
+            TxnOffsetCommitRequestTopic::default()
+                .with_name(StrBytes::from_string(name).into())
+                .with_partitions(
+                    partitions
+                        .iter()
+                        .map(|p| {
+                            let mut part = TxnOffsetCommitRequestPartition::default()
+                                .with_partition_index(p.partition)
+                                .with_committed_offset(p.offset);
+                            if let Some(epoch) = p.leader_epoch {
+                                part = part.with_committed_leader_epoch(epoch);
+                            }
+                            match p.metadata {
+                                Some(ref meta) => {
+                                    part = part.with_committed_metadata(Some(
+                                        StrBytes::from_string(meta.clone()),
+                                    ));
+                                }
+                                None => {
+                                    part = part.with_committed_metadata(None);
+                                }
+                            }
+                            part
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+
+    let request = TxnOffsetCommitRequest::default()
+        .with_transactional_id(transactional_id(txn_id))
+        .with_group_id(group_id(group_id_str))
+        .with_producer_id(ProducerId::from(producer_id))
+        .with_producer_epoch(producer_epoch)
+        .with_topics(topic_list);
+
+    (header, request)
+}
+
+/// Build a `CreateDelegationToken` request.
+pub fn build_create_delegation_token_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &CreateDelegationTokenOptions,
+) -> (RequestHeader, CreateDelegationTokenRequest) {
+    use kafka_protocol::messages::create_delegation_token_request::CreatableRenewers;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::CreateDelegationToken,
+        API_VERSION_CREATE_DELEGATION_TOKEN,
+    );
+    let renewers: Vec<CreatableRenewers> = options
+        .renewers
+        .iter()
+        .map(|r| {
+            CreatableRenewers::default()
+                .with_principal_type(StrBytes::from_string(r.principal_type.clone()))
+                .with_principal_name(StrBytes::from_string(r.principal_name.clone()))
+        })
+        .collect();
+    let request = CreateDelegationTokenRequest::default()
+        .with_owner_principal_type(
+            options
+                .owner
+                .as_ref()
+                .map(|owner| StrBytes::from_string(owner.principal_type.clone())),
+        )
+        .with_owner_principal_name(
+            options
+                .owner
+                .as_ref()
+                .map(|owner| StrBytes::from_string(owner.principal_name.clone())),
+        )
+        .with_max_lifetime_ms(options.max_lifetime_ms)
+        .with_renewers(renewers);
+
+    (header, request)
+}
+
+/// Build a `RenewDelegationToken` request.
+pub fn build_renew_delegation_token_request(
+    correlation_id: i32,
+    client_id: &str,
+    hmac: Bytes,
+    renew_period_ms: i64,
+) -> (RequestHeader, RenewDelegationTokenRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::RenewDelegationToken,
+        API_VERSION_RENEW_DELEGATION_TOKEN,
+    );
+    let request = RenewDelegationTokenRequest::default()
+        .with_hmac(hmac)
+        .with_renew_period_ms(renew_period_ms);
+
+    (header, request)
+}
+
+/// Build an `ExpireDelegationToken` request.
+pub fn build_expire_delegation_token_request(
+    correlation_id: i32,
+    client_id: &str,
+    hmac: Bytes,
+    expiry_time_period_ms: i64,
+) -> (RequestHeader, ExpireDelegationTokenRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::ExpireDelegationToken,
+        API_VERSION_EXPIRE_DELEGATION_TOKEN,
+    );
+    let request = ExpireDelegationTokenRequest::default()
+        .with_hmac(hmac)
+        .with_expiry_time_period_ms(expiry_time_period_ms);
+
+    (header, request)
+}
+
+/// Build an `AlterUserScramCredentials` request.
+pub fn build_alter_user_scram_credentials_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &AlterUserScramCredentialsOptions,
+) -> (RequestHeader, AlterUserScramCredentialsRequest) {
+    use kafka_protocol::messages::alter_user_scram_credentials_request::{
+        ScramCredentialDeletion as KpScramCredentialDeletion,
+        ScramCredentialUpsertion as KpScramCredentialUpsertion,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AlterUserScramCredentials,
+        API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+    );
+    let deletions: Vec<KpScramCredentialDeletion> = options
+        .deletions
+        .iter()
+        .map(|deletion| {
+            KpScramCredentialDeletion::default()
+                .with_name(StrBytes::from_string(deletion.name.clone()))
+                .with_mechanism(deletion.mechanism)
+        })
+        .collect();
+    let upsertions: Vec<KpScramCredentialUpsertion> = options
+        .upsertions
+        .iter()
+        .map(|upsertion| {
+            KpScramCredentialUpsertion::default()
+                .with_name(StrBytes::from_string(upsertion.name.clone()))
+                .with_mechanism(upsertion.mechanism)
+                .with_iterations(upsertion.iterations)
+                .with_salt(upsertion.salt.clone())
+                .with_salted_password(upsertion.salted_password.clone())
+        })
+        .collect();
+    let request = AlterUserScramCredentialsRequest::default()
+        .with_deletions(deletions)
+        .with_upsertions(upsertions);
+
+    (header, request)
+}
+
+/// Build an `UpdateFeatures` request.
+pub fn build_update_features_request(
+    correlation_id: i32,
+    client_id: &str,
+    feature_updates: &[FeatureUpdate],
+    validate_only: bool,
+) -> (RequestHeader, UpdateFeaturesRequest) {
+    use kafka_protocol::messages::update_features_request::FeatureUpdateKey;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::UpdateFeatures,
+        API_VERSION_UPDATE_FEATURES,
+    );
+    let updates: Vec<FeatureUpdateKey> = feature_updates
+        .iter()
+        .map(|update| {
+            FeatureUpdateKey::default()
+                .with_feature(StrBytes::from_string(update.feature.clone()))
+                .with_max_version_level(update.max_version_level)
+                .with_upgrade_type(update.upgrade_type)
+        })
+        .collect();
+    let request = UpdateFeaturesRequest::default()
+        .with_feature_updates(updates)
+        .with_validate_only(validate_only);
+
+    (header, request)
+}
+
+/// Build an `UnregisterBroker` request.
+pub fn build_unregister_broker_request(
+    correlation_id: i32,
+    client_id: &str,
+    broker_id: i32,
+) -> (RequestHeader, UnregisterBrokerRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::UnregisterBroker,
+        API_VERSION_UNREGISTER_BROKER,
+    );
+    let request = UnregisterBrokerRequest::default()
+        .with_broker_id(kafka_protocol::messages::BrokerId::from(broker_id));
+
+    (header, request)
+}
+
+/// Build an `AlterShareGroupOffsets` request.
+pub fn build_alter_share_group_offsets_request(
+    correlation_id: i32,
+    client_id: &str,
+    group_id_str: &str,
+    topics: &[AlterShareGroupOffsetTopic],
+) -> (RequestHeader, AlterShareGroupOffsetsRequest) {
+    use kafka_protocol::messages::alter_share_group_offsets_request::{
+        AlterShareGroupOffsetsRequestPartition, AlterShareGroupOffsetsRequestTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AlterShareGroupOffsets,
+        API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
+    );
+    let topic_list: Vec<AlterShareGroupOffsetsRequestTopic> = topics
+        .iter()
+        .map(|topic| {
+            AlterShareGroupOffsetsRequestTopic::default()
+                .with_topic_name(StrBytes::from_string(topic.topic_name.clone()).into())
+                .with_partitions(
+                    topic
+                        .partitions
+                        .iter()
+                        .map(|p| {
+                            AlterShareGroupOffsetsRequestPartition::default()
+                                .with_partition_index(p.partition_index)
+                                .with_start_offset(p.offset)
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = AlterShareGroupOffsetsRequest::default()
+        .with_group_id(group_id(group_id_str))
+        .with_topics(topic_list);
+
+    (header, request)
+}
+
+/// Build a `DeleteShareGroupOffsets` request.
+pub fn build_delete_share_group_offsets_request(
+    correlation_id: i32,
+    client_id: &str,
+    group_id_str: &str,
+    topics: &[DeleteShareGroupOffsetTopic],
+) -> (RequestHeader, DeleteShareGroupOffsetsRequest) {
+    use kafka_protocol::messages::delete_share_group_offsets_request::DeleteShareGroupOffsetsRequestTopic;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DeleteShareGroupOffsets,
+        API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
+    );
+    let topic_list: Vec<DeleteShareGroupOffsetsRequestTopic> = topics
+        .iter()
+        .map(|topic| {
+            DeleteShareGroupOffsetsRequestTopic::default()
+                .with_topic_name(StrBytes::from_string(topic.topic_name.clone()).into())
+        })
+        .collect();
+    let request = DeleteShareGroupOffsetsRequest::default()
+        .with_group_id(group_id(group_id_str))
+        .with_topics(topic_list);
+
+    (header, request)
+}
+
 /// Convert a generated `DescribeClusterResponse` into the crate's public shape.
 pub fn convert_describe_cluster_response(
     response: DescribeClusterResponse,
@@ -3536,6 +4685,47 @@ pub fn convert_incremental_alter_configs_response(
                 error_message: result.error_message.map(|message| message.to_string()),
                 resource_type: result.resource_type,
                 resource_name: result.resource_name.to_string(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `AlterConfigsResponse` into the crate's public shape.
+pub fn convert_alter_configs_response(response: AlterConfigsResponse) -> AlterConfigsResponseData {
+    AlterConfigsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        responses: response
+            .responses
+            .into_iter()
+            .map(|result| AlterConfigsResourceResult {
+                error_code: result.error_code,
+                error_message: result.error_message.map(|m| m.to_string()),
+                resource_type: result.resource_type,
+                resource_name: result.resource_name.to_string(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `AlterReplicaLogDirsResponse` into the crate's public shape.
+pub fn convert_alter_replica_log_dirs_response(
+    response: AlterReplicaLogDirsResponse,
+) -> AlterReplicaLogDirsResponseData {
+    AlterReplicaLogDirsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        results: response
+            .results
+            .into_iter()
+            .map(|topic| AlterReplicaLogDirTopicResult {
+                topic_name: topic.topic_name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|p| AlterReplicaLogDirPartitionResult {
+                        partition_index: p.partition_index,
+                        error_code: p.error_code,
+                    })
+                    .collect(),
             })
             .collect(),
     }
@@ -4272,6 +5462,190 @@ pub fn convert_describe_transactions_response(
     }
 }
 
+/// Convert a generated `AddOffsetsToTxnResponse` into the crate's public shape.
+pub fn convert_add_offsets_to_txn_response(
+    response: &AddOffsetsToTxnResponse,
+) -> AddOffsetsToTxnResponseData {
+    AddOffsetsToTxnResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+    }
+}
+
+/// Convert a generated `TxnOffsetCommitResponse` into the crate's public shape.
+pub fn convert_txn_offset_commit_response(
+    response: TxnOffsetCommitResponse,
+) -> TxnOffsetCommitResponseData {
+    TxnOffsetCommitResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        topics: response
+            .topics
+            .into_iter()
+            .map(|topic| TxnOffsetCommitTopicResult {
+                topic: topic.name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|p| TxnOffsetCommitPartitionResult {
+                        partition_index: p.partition_index,
+                        error_code: p.error_code,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `CreateDelegationTokenResponse` into the crate's public shape.
+pub fn convert_create_delegation_token_response(
+    response: CreateDelegationTokenResponse,
+) -> CreateDelegationTokenResponseData {
+    CreateDelegationTokenResponseData {
+        error_code: response.error_code,
+        owner: KafkaPrincipal::new(
+            response.principal_type.to_string(),
+            response.principal_name.to_string(),
+        ),
+        requester: if response.token_requester_principal_type.is_empty()
+            && response.token_requester_principal_name.is_empty()
+        {
+            None
+        } else {
+            Some(KafkaPrincipal::new(
+                response.token_requester_principal_type.to_string(),
+                response.token_requester_principal_name.to_string(),
+            ))
+        },
+        issue_timestamp: response.issue_timestamp_ms,
+        expiry_timestamp: response.expiry_timestamp_ms,
+        max_timestamp: response.max_timestamp_ms,
+        token_id: response.token_id.to_string(),
+        hmac: response.hmac,
+        throttle_time_ms: response.throttle_time_ms,
+    }
+}
+
+/// Convert a generated `RenewDelegationTokenResponse` into the crate's public shape.
+pub fn convert_renew_delegation_token_response(
+    response: &RenewDelegationTokenResponse,
+) -> RenewDelegationTokenResponseData {
+    RenewDelegationTokenResponseData {
+        error_code: response.error_code,
+        expiry_timestamp_ms: response.expiry_timestamp_ms,
+        throttle_time_ms: response.throttle_time_ms,
+    }
+}
+
+/// Convert a generated `ExpireDelegationTokenResponse` into the crate's public shape.
+pub fn convert_expire_delegation_token_response(
+    response: &ExpireDelegationTokenResponse,
+) -> ExpireDelegationTokenResponseData {
+    ExpireDelegationTokenResponseData {
+        error_code: response.error_code,
+        expiry_timestamp_ms: response.expiry_timestamp_ms,
+        throttle_time_ms: response.throttle_time_ms,
+    }
+}
+
+/// Convert a generated `AlterUserScramCredentialsResponse` into the crate's public shape.
+pub fn convert_alter_user_scram_credentials_response(
+    response: AlterUserScramCredentialsResponse,
+) -> AlterUserScramCredentialsResponseData {
+    AlterUserScramCredentialsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        results: response
+            .results
+            .into_iter()
+            .map(|result| AlterUserScramCredentialResult {
+                user: result.user.to_string(),
+                error_code: result.error_code,
+                error_message: result
+                    .error_message
+                    .map(|m| m.to_string())
+                    .filter(|m| !m.is_empty()),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `UpdateFeaturesResponse` into the crate's public shape.
+pub fn convert_update_features_response(
+    response: UpdateFeaturesResponse,
+) -> UpdateFeaturesResponseData {
+    UpdateFeaturesResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|m| m.to_string()),
+        results: response
+            .results
+            .into_iter()
+            .map(|result| UpdateFeaturesResult {
+                feature: result.feature.to_string(),
+                error_code: result.error_code,
+                error_message: result.error_message.map(|m| m.to_string()),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `UnregisterBrokerResponse` into the crate's public shape.
+pub fn convert_unregister_broker_response(
+    response: UnregisterBrokerResponse,
+) -> UnregisterBrokerResponseData {
+    UnregisterBrokerResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|m| m.to_string()),
+    }
+}
+
+/// Convert a generated `AlterShareGroupOffsetsResponse` into the crate's public shape.
+pub fn convert_alter_share_group_offsets_response(
+    response: AlterShareGroupOffsetsResponse,
+) -> AlterShareGroupOffsetsResponseData {
+    AlterShareGroupOffsetsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|m| m.to_string()),
+        responses: response
+            .responses
+            .into_iter()
+            .map(|topic| AlterShareGroupOffsetTopicResult {
+                topic_name: topic.topic_name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|p| AlterShareGroupOffsetPartitionResult {
+                        partition_index: p.partition_index,
+                        error_code: p.error_code,
+                        error_message: p.error_message.map(|m| m.to_string()),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `DeleteShareGroupOffsetsResponse` into the crate's public shape.
+pub fn convert_delete_share_group_offsets_response(
+    response: DeleteShareGroupOffsetsResponse,
+) -> DeleteShareGroupOffsetsResponseData {
+    DeleteShareGroupOffsetsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|m| m.to_string()),
+        responses: response
+            .responses
+            .into_iter()
+            .map(|topic| DeleteShareGroupOffsetTopicResult {
+                topic_name: topic.topic_name.to_string(),
+                error_code: topic.error_code,
+                error_message: topic.error_message.map(|m| m.to_string()),
+            })
+            .collect(),
+    }
+}
+
 fn request_header(
     correlation_id: i32,
     client_id: &str,
@@ -4306,10 +5680,16 @@ mod tests {
     use kafka_protocol::messages::alter_client_quotas_response::{
         EntityData as KpAlterClientQuotaEntity, EntryData as KpAlterClientQuotaEntry,
     };
+    use kafka_protocol::messages::alter_configs_response::AlterConfigsResourceResponse as KpAlterConfigsResourceResponse;
     use kafka_protocol::messages::alter_partition_reassignments_response::{
         ReassignablePartitionResponse as KpReassignablePartitionResponse,
         ReassignableTopicResponse as KpReassignableTopicResponse,
     };
+    use kafka_protocol::messages::alter_replica_log_dirs_response::{
+        AlterReplicaLogDirPartitionResult as KpAlterReplicaLogDirPartitionResult,
+        AlterReplicaLogDirTopicResult as KpAlterReplicaLogDirTopicResult,
+    };
+    use kafka_protocol::messages::alter_user_scram_credentials_response::AlterUserScramCredentialsResult as KpAlterUserScramCredentialsResult;
     use kafka_protocol::messages::consumer_group_describe_response::{
         Assignment as KpConsumerGroupAssignment, DescribedGroup as KpConsumerGroupDescription,
         Member as KpConsumerGroupMember, TopicPartitions as KpConsumerGroupTopicPartitions,
@@ -4399,6 +5779,8 @@ mod tests {
         Assignment as KpShareGroupAssignment, DescribedGroup as KpShareGroupDescription,
         Member as KpShareGroupMember, TopicPartitions as KpShareGroupTopicPartitions,
     };
+    use kafka_protocol::messages::unregister_broker_response::UnregisterBrokerResponse as KpUnregisterBrokerResponse;
+    use kafka_protocol::messages::update_features_response::UpdatableFeatureResult as KpUpdatableFeatureResult;
     use kafka_protocol::messages::{BrokerId, ProducerId};
 
     #[test]
@@ -6269,6 +7651,695 @@ mod tests {
         assert_eq!(
             converted.transaction_states[0].topics[0].partitions,
             vec![0, 1]
+        );
+    }
+
+    #[test]
+    fn add_offsets_to_txn_request_includes_transaction_and_group() {
+        let (header, request) =
+            build_add_offsets_to_txn_request(30, "client-x", "txn-a", 42, 3, "group-a");
+
+        assert_eq!(header.request_api_key, ApiKey::AddOffsetsToTxn as i16);
+        assert_eq!(header.request_api_version, API_VERSION_ADD_OFFSETS_TO_TXN);
+        assert_eq!(header.correlation_id, 30);
+        assert_eq!(
+            header.client_id.as_ref().map(ToString::to_string),
+            Some("client-x".to_owned())
+        );
+        assert_eq!(request.transactional_id.to_string(), "txn-a");
+        assert_eq!(i64::from(request.producer_id), 42);
+        assert_eq!(request.producer_epoch, 3);
+        assert_eq!(request.group_id.to_string(), "group-a");
+    }
+
+    #[test]
+    fn txn_offset_commit_request_groups_topics() {
+        let offsets = vec![
+            TxnOffsetCommitTopicPartition {
+                topic: "topic-a".to_owned(),
+                partition: 0,
+                offset: 10,
+                leader_epoch: Some(5),
+                metadata: Some("meta-a".to_owned()),
+            },
+            TxnOffsetCommitTopicPartition {
+                topic: "topic-a".to_owned(),
+                partition: 1,
+                offset: 20,
+                leader_epoch: None,
+                metadata: None,
+            },
+            TxnOffsetCommitTopicPartition {
+                topic: "topic-b".to_owned(),
+                partition: 0,
+                offset: 30,
+                leader_epoch: Some(7),
+                metadata: None,
+            },
+        ];
+        let (header, request) =
+            build_txn_offset_commit_request(31, "client-y", "txn-b", "group-b", 43, 4, &offsets);
+
+        assert_eq!(header.request_api_key, ApiKey::TxnOffsetCommit as i16);
+        assert_eq!(header.request_api_version, API_VERSION_TXN_OFFSET_COMMIT);
+        assert_eq!(request.transactional_id.to_string(), "txn-b");
+        assert_eq!(request.group_id.to_string(), "group-b");
+        assert_eq!(i64::from(request.producer_id), 43);
+        assert_eq!(request.producer_epoch, 4);
+
+        // Topics are grouped by name (BTreeMap sorts alphabetically)
+        assert_eq!(request.topics.len(), 2);
+        assert_eq!(request.topics[0].name.to_string(), "topic-a");
+        assert_eq!(request.topics[0].partitions.len(), 2);
+        assert_eq!(request.topics[0].partitions[0].partition_index, 0);
+        assert_eq!(request.topics[0].partitions[0].committed_offset, 10);
+        assert_eq!(request.topics[0].partitions[0].committed_leader_epoch, 5);
+        assert_eq!(
+            request.topics[0].partitions[0]
+                .committed_metadata
+                .as_ref()
+                .map(ToString::to_string),
+            Some("meta-a".to_owned())
+        );
+        assert_eq!(request.topics[0].partitions[1].partition_index, 1);
+        assert_eq!(request.topics[0].partitions[1].committed_offset, 20);
+        assert_eq!(request.topics[0].partitions[1].committed_leader_epoch, -1);
+        assert!(request.topics[0].partitions[1].committed_metadata.is_none());
+
+        assert_eq!(request.topics[1].name.to_string(), "topic-b");
+        assert_eq!(request.topics[1].partitions.len(), 1);
+        assert_eq!(request.topics[1].partitions[0].partition_index, 0);
+        assert_eq!(request.topics[1].partitions[0].committed_offset, 30);
+    }
+
+    #[test]
+    fn add_offsets_to_txn_response_maps_all_fields() {
+        use kafka_protocol::messages::add_offsets_to_txn_response::AddOffsetsToTxnResponse as KpAddOffsetsToTxnResponse;
+
+        let response = KpAddOffsetsToTxnResponse::default()
+            .with_throttle_time_ms(100)
+            .with_error_code(0);
+
+        let converted = convert_add_offsets_to_txn_response(&response);
+
+        assert_eq!(
+            converted,
+            AddOffsetsToTxnResponseData {
+                throttle_time_ms: 100,
+                error_code: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn txn_offset_commit_response_maps_all_fields() {
+        use kafka_protocol::messages::txn_offset_commit_response::{
+            TxnOffsetCommitResponsePartition as KpTxnOffsetCommitPartition,
+            TxnOffsetCommitResponseTopic as KpTxnOffsetCommitTopic,
+        };
+
+        let response = TxnOffsetCommitResponse::default()
+            .with_throttle_time_ms(200)
+            .with_topics(vec![
+                KpTxnOffsetCommitTopic::default()
+                    .with_name(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpTxnOffsetCommitPartition::default()
+                            .with_partition_index(0)
+                            .with_error_code(0),
+                        KpTxnOffsetCommitPartition::default()
+                            .with_partition_index(1)
+                            .with_error_code(15),
+                    ]),
+                KpTxnOffsetCommitTopic::default()
+                    .with_name(StrBytes::from_static_str("topic-b").into())
+                    .with_partitions(vec![
+                        KpTxnOffsetCommitPartition::default()
+                            .with_partition_index(0)
+                            .with_error_code(0),
+                    ]),
+            ]);
+
+        let converted = convert_txn_offset_commit_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 200);
+        assert_eq!(converted.topics.len(), 2);
+        assert_eq!(converted.topics[0].topic, "topic-a");
+        assert_eq!(converted.topics[0].partitions.len(), 2);
+        assert_eq!(converted.topics[0].partitions[0].partition_index, 0);
+        assert_eq!(converted.topics[0].partitions[0].error_code, 0);
+        assert_eq!(converted.topics[0].partitions[1].partition_index, 1);
+        assert_eq!(converted.topics[0].partitions[1].error_code, 15);
+        assert_eq!(converted.topics[1].topic, "topic-b");
+        assert_eq!(converted.topics[1].partitions.len(), 1);
+        assert_eq!(converted.topics[1].partitions[0].partition_index, 0);
+        assert_eq!(converted.topics[1].partitions[0].error_code, 0);
+    }
+
+    #[test]
+    fn create_delegation_token_request_includes_renewers_and_max_lifetime() {
+        let options = CreateDelegationTokenOptions::new()
+            .with_owner(KafkaPrincipal::user("carol"))
+            .with_renewers([
+                KafkaPrincipal::new("User", "alice"),
+                KafkaPrincipal::new("User", "bob"),
+            ])
+            .with_max_lifetime_ms(86_400_000);
+        let (header, request) = build_create_delegation_token_request(42, "client-a", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::CreateDelegationToken as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_CREATE_DELEGATION_TOKEN
+        );
+        assert_eq!(header.correlation_id, 42);
+        assert_eq!(
+            request
+                .owner_principal_type
+                .as_ref()
+                .map(ToString::to_string),
+            Some("User".to_owned())
+        );
+        assert_eq!(
+            request
+                .owner_principal_name
+                .as_ref()
+                .map(ToString::to_string),
+            Some("carol".to_owned())
+        );
+        assert_eq!(request.max_lifetime_ms, 86_400_000);
+        assert_eq!(request.renewers.len(), 2);
+        assert_eq!(
+            request.renewers[0].principal_type,
+            StrBytes::from_static_str("User")
+        );
+        assert_eq!(
+            request.renewers[0].principal_name,
+            StrBytes::from_static_str("alice")
+        );
+        assert_eq!(
+            request.renewers[1].principal_name,
+            StrBytes::from_static_str("bob")
+        );
+    }
+
+    #[test]
+    fn create_delegation_token_request_omits_owner_for_broker_default() {
+        let options = CreateDelegationTokenOptions::default();
+        let (_, request) = build_create_delegation_token_request(43, "client-a", &options);
+
+        assert!(request.owner_principal_type.is_none());
+        assert!(request.owner_principal_name.is_none());
+        assert_eq!(request.max_lifetime_ms, -1);
+        assert!(request.renewers.is_empty());
+    }
+
+    #[test]
+    fn renew_delegation_token_request_includes_hmac_and_period() {
+        let hmac = Bytes::from_static(b"test-hmac-data");
+        let (header, request) =
+            build_renew_delegation_token_request(7, "client-b", hmac.clone(), 3_600_000);
+
+        assert_eq!(header.request_api_key, ApiKey::RenewDelegationToken as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_RENEW_DELEGATION_TOKEN
+        );
+        assert_eq!(request.hmac, hmac);
+        assert_eq!(request.renew_period_ms, 3_600_000);
+    }
+
+    #[test]
+    fn expire_delegation_token_request_includes_hmac_and_expiry() {
+        let hmac = Bytes::from_static(b"expire-hmac");
+        let (header, request) =
+            build_expire_delegation_token_request(8, "client-c", hmac.clone(), 60_000);
+
+        assert_eq!(header.request_api_key, ApiKey::ExpireDelegationToken as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_EXPIRE_DELEGATION_TOKEN
+        );
+        assert_eq!(request.hmac, hmac);
+        assert_eq!(request.expiry_time_period_ms, 60_000);
+    }
+
+    #[test]
+    fn alter_user_scram_credentials_request_includes_deletions_and_upsertions() {
+        let salt = Bytes::from_static(b"salt-value");
+        let password = Bytes::from_static(b"salted-pw");
+        let options = AlterUserScramCredentialsOptions::new()
+            .with_deletion(ScramCredentialDeletion::new(
+                "old-user",
+                SCRAM_MECHANISM_SHA_256,
+            ))
+            .with_upsertion(ScramCredentialUpsertion::new(
+                "new-user",
+                SCRAM_MECHANISM_SHA_512,
+                4096,
+                salt.clone(),
+                password.clone(),
+            ));
+        let (header, request) = build_alter_user_scram_credentials_request(9, "client-d", &options);
+
+        assert_eq!(
+            header.request_api_key,
+            ApiKey::AlterUserScramCredentials as i16
+        );
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_ALTER_USER_SCRAM_CREDENTIALS
+        );
+        assert_eq!(request.deletions.len(), 1);
+        assert_eq!(
+            request.deletions[0].name,
+            StrBytes::from_static_str("old-user")
+        );
+        assert_eq!(request.deletions[0].mechanism, SCRAM_MECHANISM_SHA_256);
+        assert_eq!(request.upsertions.len(), 1);
+        assert_eq!(
+            request.upsertions[0].name,
+            StrBytes::from_static_str("new-user")
+        );
+        assert_eq!(request.upsertions[0].mechanism, SCRAM_MECHANISM_SHA_512);
+        assert_eq!(request.upsertions[0].iterations, 4096);
+        assert_eq!(request.upsertions[0].salt, salt);
+        assert_eq!(request.upsertions[0].salted_password, password);
+    }
+
+    #[test]
+    fn create_delegation_token_response_maps_all_fields() {
+        let response = CreateDelegationTokenResponse::default()
+            .with_error_code(0)
+            .with_principal_type(StrBytes::from_static_str("User"))
+            .with_principal_name(StrBytes::from_static_str("alice"))
+            .with_token_requester_principal_type(StrBytes::from_static_str("User"))
+            .with_token_requester_principal_name(StrBytes::from_static_str("bob"))
+            .with_issue_timestamp_ms(1_000)
+            .with_expiry_timestamp_ms(2_000)
+            .with_max_timestamp_ms(3_000)
+            .with_token_id(StrBytes::from_static_str("token-1"))
+            .with_hmac(Bytes::from_static(b"hmac-data"))
+            .with_throttle_time_ms(5);
+
+        let converted = convert_create_delegation_token_response(response);
+
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.owner, KafkaPrincipal::user("alice"));
+        assert_eq!(converted.requester, Some(KafkaPrincipal::user("bob")));
+        assert_eq!(converted.issue_timestamp, 1_000);
+        assert_eq!(converted.expiry_timestamp, 2_000);
+        assert_eq!(converted.max_timestamp, 3_000);
+        assert_eq!(converted.token_id, "token-1");
+        assert_eq!(converted.hmac, Bytes::from_static(b"hmac-data"));
+        assert_eq!(converted.throttle_time_ms, 5);
+    }
+
+    #[test]
+    fn renew_delegation_token_response_maps_all_fields() {
+        let response = RenewDelegationTokenResponse::default()
+            .with_error_code(0)
+            .with_expiry_timestamp_ms(9_000)
+            .with_throttle_time_ms(10);
+
+        let converted = convert_renew_delegation_token_response(&response);
+
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.expiry_timestamp_ms, 9_000);
+        assert_eq!(converted.throttle_time_ms, 10);
+    }
+
+    #[test]
+    fn expire_delegation_token_response_maps_all_fields() {
+        let response = ExpireDelegationTokenResponse::default()
+            .with_error_code(0)
+            .with_expiry_timestamp_ms(5_000)
+            .with_throttle_time_ms(7);
+
+        let converted = convert_expire_delegation_token_response(&response);
+
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.expiry_timestamp_ms, 5_000);
+        assert_eq!(converted.throttle_time_ms, 7);
+    }
+
+    #[test]
+    fn alter_user_scram_credentials_response_maps_all_fields() {
+        let response = AlterUserScramCredentialsResponse::default()
+            .with_throttle_time_ms(3)
+            .with_results(vec![
+                KpAlterUserScramCredentialsResult::default()
+                    .with_user(StrBytes::from_static_str("alice"))
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok"))),
+                KpAlterUserScramCredentialsResult::default()
+                    .with_user(StrBytes::from_static_str("bob"))
+                    .with_error_code(42),
+            ]);
+
+        let converted = convert_alter_user_scram_credentials_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 3);
+        assert_eq!(converted.results.len(), 2);
+        assert_eq!(converted.results[0].user, "alice");
+        assert_eq!(converted.results[0].error_code, 0);
+        assert_eq!(converted.results[0].error_message, Some("ok".to_owned()));
+        assert_eq!(converted.results[1].user, "bob");
+        assert_eq!(converted.results[1].error_code, 42);
+        assert_eq!(converted.results[1].error_message, None);
+    }
+
+    #[test]
+    fn update_features_request_includes_feature_updates_and_validate_only() {
+        let updates = [
+            FeatureUpdate::upgrade("kraft.version", 3),
+            FeatureUpdate::safe_downgrade("test.feature", 1),
+        ];
+        let (header, request) = build_update_features_request(42, "client-a", &updates, true);
+
+        assert_eq!(header.request_api_key, ApiKey::UpdateFeatures as i16);
+        assert_eq!(header.request_api_version, API_VERSION_UPDATE_FEATURES);
+        assert_eq!(header.correlation_id, 42);
+        assert!(request.validate_only);
+        assert_eq!(request.feature_updates.len(), 2);
+        assert_eq!(
+            request.feature_updates[0].feature,
+            StrBytes::from_static_str("kraft.version")
+        );
+        assert_eq!(request.feature_updates[0].max_version_level, 3);
+        assert_eq!(
+            request.feature_updates[0].upgrade_type,
+            FEATURE_UPGRADE_TYPE_UPGRADE
+        );
+        assert_eq!(
+            request.feature_updates[1].feature,
+            StrBytes::from_static_str("test.feature")
+        );
+        assert_eq!(request.feature_updates[1].max_version_level, 1);
+        assert_eq!(
+            request.feature_updates[1].upgrade_type,
+            FEATURE_UPGRADE_TYPE_SAFE_DOWNGRADE
+        );
+    }
+
+    #[test]
+    fn unregister_broker_request_includes_broker_id() {
+        let (header, request) = build_unregister_broker_request(99, "client-b", 42);
+
+        assert_eq!(header.request_api_key, ApiKey::UnregisterBroker as i16);
+        assert_eq!(header.request_api_version, API_VERSION_UNREGISTER_BROKER);
+        assert_eq!(header.correlation_id, 99);
+        assert_eq!(i32::from(request.broker_id), 42);
+    }
+
+    #[test]
+    fn update_features_response_maps_all_fields() {
+        let response = UpdateFeaturesResponse::default()
+            .with_throttle_time_ms(50)
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("top-level-ok")))
+            .with_results(vec![
+                KpUpdatableFeatureResult::default()
+                    .with_feature(StrBytes::from_static_str("kraft.version"))
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok"))),
+                KpUpdatableFeatureResult::default()
+                    .with_feature(StrBytes::from_static_str("test.feature"))
+                    .with_error_code(42)
+                    .with_error_message(None),
+            ]);
+
+        let converted = convert_update_features_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 50);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.error_message, Some("top-level-ok".to_owned()));
+        assert_eq!(converted.results.len(), 2);
+        assert_eq!(converted.results[0].feature, "kraft.version");
+        assert_eq!(converted.results[0].error_code, 0);
+        assert_eq!(converted.results[0].error_message, Some("ok".to_owned()));
+        assert_eq!(converted.results[1].feature, "test.feature");
+        assert_eq!(converted.results[1].error_code, 42);
+        assert_eq!(converted.results[1].error_message, None);
+    }
+
+    #[test]
+    fn unregister_broker_response_maps_all_fields() {
+        let response = KpUnregisterBrokerResponse::default()
+            .with_throttle_time_ms(100)
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("unregistered")));
+
+        let converted = convert_unregister_broker_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 100);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.error_message, Some("unregistered".to_owned()));
+    }
+
+    #[test]
+    fn alter_configs_request_replaces_all_resource_configs() {
+        let options = AlterConfigsOptions::new([AlterConfigsResource::topic(
+            "topic-a",
+            [
+                AlterConfigsEntry::new("retention.ms", "86400000"),
+                AlterConfigsEntry::reset("cleanup.policy"),
+            ],
+        )])
+        .with_validate_only(true);
+        let (header, request) = build_alter_configs_request(30, "client-x", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::AlterConfigs as i16);
+        assert_eq!(header.request_api_version, API_VERSION_ALTER_CONFIGS);
+        assert!(request.validate_only);
+        assert_eq!(
+            request.resources[0].resource_type,
+            CONFIG_RESOURCE_TYPE_TOPIC
+        );
+        assert_eq!(request.resources[0].resource_name.to_string(), "topic-a");
+        assert_eq!(
+            request.resources[0].configs[0].name.to_string(),
+            "retention.ms"
+        );
+        assert_eq!(
+            request.resources[0].configs[0]
+                .value
+                .as_ref()
+                .map(ToString::to_string),
+            Some("86400000".to_owned())
+        );
+        assert_eq!(
+            request.resources[0].configs[1].name.to_string(),
+            "cleanup.policy"
+        );
+        assert!(request.resources[0].configs[1].value.is_none());
+    }
+
+    #[test]
+    fn alter_replica_log_dirs_request_includes_paths_and_topics() {
+        let dirs = [AlterReplicaLogDir::new(
+            "/kafka-logs-2",
+            vec![AlterReplicaLogDirTopic::new("topic-a", [0, 1])],
+        )];
+        let (header, request) = build_alter_replica_log_dirs_request(31, "client-y", &dirs);
+
+        assert_eq!(header.request_api_key, ApiKey::AlterReplicaLogDirs as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_ALTER_REPLICA_LOG_DIRS
+        );
+        assert_eq!(request.dirs[0].path.to_string(), "/kafka-logs-2");
+        assert_eq!(request.dirs[0].topics[0].name.to_string(), "topic-a");
+        assert_eq!(request.dirs[0].topics[0].partitions, vec![0, 1]);
+    }
+
+    #[test]
+    fn alter_configs_response_maps_all_fields() {
+        let response = AlterConfigsResponse::default()
+            .with_throttle_time_ms(15)
+            .with_responses(vec![
+                KpAlterConfigsResourceResponse::default()
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok")))
+                    .with_resource_type(CONFIG_RESOURCE_TYPE_TOPIC)
+                    .with_resource_name(StrBytes::from_static_str("topic-a")),
+            ]);
+
+        let converted = convert_alter_configs_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 15);
+        assert_eq!(converted.responses[0].error_code, 0);
+        assert_eq!(converted.responses[0].error_message, Some("ok".to_owned()));
+        assert_eq!(
+            converted.responses[0].resource_type,
+            CONFIG_RESOURCE_TYPE_TOPIC
+        );
+        assert_eq!(converted.responses[0].resource_name, "topic-a");
+    }
+
+    #[test]
+    fn alter_replica_log_dirs_response_maps_all_fields() {
+        let response = AlterReplicaLogDirsResponse::default()
+            .with_throttle_time_ms(20)
+            .with_results(vec![
+                KpAlterReplicaLogDirTopicResult::default()
+                    .with_topic_name(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpAlterReplicaLogDirPartitionResult::default()
+                            .with_partition_index(0)
+                            .with_error_code(0),
+                        KpAlterReplicaLogDirPartitionResult::default()
+                            .with_partition_index(1)
+                            .with_error_code(15),
+                    ]),
+            ]);
+
+        let converted = convert_alter_replica_log_dirs_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 20);
+        assert_eq!(converted.results[0].topic_name, "topic-a");
+        assert_eq!(
+            converted.results[0].partitions,
+            vec![
+                AlterReplicaLogDirPartitionResult {
+                    partition_index: 0,
+                    error_code: 0,
+                },
+                AlterReplicaLogDirPartitionResult {
+                    partition_index: 1,
+                    error_code: 15,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn alter_share_group_offsets_request_includes_group_and_topics() {
+        let topics = vec![AlterShareGroupOffsetTopic::new(
+            "topic-a",
+            [
+                AlterShareGroupOffsetPartition::new(0, 42),
+                AlterShareGroupOffsetPartition::new(1, 99),
+            ],
+        )];
+        let (header, request) =
+            build_alter_share_group_offsets_request(10, "test-client", "my-group", &topics);
+
+        assert_eq!(
+            header.request_api_key,
+            ApiKey::AlterShareGroupOffsets as i16
+        );
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_ALTER_SHARE_GROUP_OFFSETS
+        );
+        assert_eq!(request.group_id.as_str(), "my-group");
+        assert_eq!(request.topics.len(), 1);
+        assert_eq!(request.topics[0].topic_name.as_str(), "topic-a");
+        assert_eq!(request.topics[0].partitions.len(), 2);
+        assert_eq!(request.topics[0].partitions[0].partition_index, 0);
+        assert_eq!(request.topics[0].partitions[0].start_offset, 42);
+        assert_eq!(request.topics[0].partitions[1].partition_index, 1);
+        assert_eq!(request.topics[0].partitions[1].start_offset, 99);
+    }
+
+    #[test]
+    fn delete_share_group_offsets_request_includes_group_and_topics() {
+        let topics = vec![DeleteShareGroupOffsetTopic::new("topic-a")];
+        let (header, request) =
+            build_delete_share_group_offsets_request(11, "test-client", "my-group", &topics);
+
+        assert_eq!(
+            header.request_api_key,
+            ApiKey::DeleteShareGroupOffsets as i16
+        );
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_DELETE_SHARE_GROUP_OFFSETS
+        );
+        assert_eq!(request.group_id.as_str(), "my-group");
+        assert_eq!(request.topics.len(), 1);
+        assert_eq!(request.topics[0].topic_name.as_str(), "topic-a");
+    }
+
+    #[test]
+    fn alter_share_group_offsets_response_maps_all_fields() {
+        use kafka_protocol::messages::alter_share_group_offsets_response::{
+            AlterShareGroupOffsetsResponsePartition as KpAlterSharePartition,
+            AlterShareGroupOffsetsResponseTopic as KpAlterShareTopic,
+        };
+
+        let response = AlterShareGroupOffsetsResponse::default()
+            .with_throttle_time_ms(50)
+            .with_error_code(0)
+            .with_error_message(None)
+            .with_responses(vec![
+                KpAlterShareTopic::default()
+                    .with_topic_name(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpAlterSharePartition::default()
+                            .with_partition_index(0)
+                            .with_error_code(0)
+                            .with_error_message(None),
+                        KpAlterSharePartition::default()
+                            .with_partition_index(1)
+                            .with_error_code(42)
+                            .with_error_message(Some(StrBytes::from_static_str("some error"))),
+                    ]),
+            ]);
+
+        let converted = convert_alter_share_group_offsets_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 50);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.error_message, None);
+        assert_eq!(converted.responses.len(), 1);
+        assert_eq!(converted.responses[0].topic_name, "topic-a");
+        assert_eq!(converted.responses[0].partitions.len(), 2);
+        assert_eq!(converted.responses[0].partitions[0].partition_index, 0);
+        assert_eq!(converted.responses[0].partitions[0].error_code, 0);
+        assert_eq!(converted.responses[0].partitions[0].error_message, None);
+        assert_eq!(converted.responses[0].partitions[1].partition_index, 1);
+        assert_eq!(converted.responses[0].partitions[1].error_code, 42);
+        assert_eq!(
+            converted.responses[0].partitions[1].error_message,
+            Some("some error".to_owned())
+        );
+    }
+
+    #[test]
+    fn delete_share_group_offsets_response_maps_all_fields() {
+        use kafka_protocol::messages::delete_share_group_offsets_response::DeleteShareGroupOffsetsResponseTopic as KpDeleteShareTopic;
+
+        let response = DeleteShareGroupOffsetsResponse::default()
+            .with_throttle_time_ms(75)
+            .with_error_code(0)
+            .with_error_message(None)
+            .with_responses(vec![
+                KpDeleteShareTopic::default()
+                    .with_topic_name(StrBytes::from_static_str("topic-a").into())
+                    .with_error_code(0)
+                    .with_error_message(None),
+                KpDeleteShareTopic::default()
+                    .with_topic_name(StrBytes::from_static_str("topic-b").into())
+                    .with_error_code(3)
+                    .with_error_message(Some(StrBytes::from_static_str("unknown topic"))),
+            ]);
+
+        let converted = convert_delete_share_group_offsets_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 75);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.error_message, None);
+        assert_eq!(converted.responses.len(), 2);
+        assert_eq!(converted.responses[0].topic_name, "topic-a");
+        assert_eq!(converted.responses[0].error_code, 0);
+        assert_eq!(converted.responses[0].error_message, None);
+        assert_eq!(converted.responses[1].topic_name, "topic-b");
+        assert_eq!(converted.responses[1].error_code, 3);
+        assert_eq!(
+            converted.responses[1].error_message,
+            Some("unknown topic".to_owned())
         );
     }
 }

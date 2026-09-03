@@ -101,7 +101,7 @@ pub struct PartitionOffsetResponse {
 }
 
 impl PartitionOffsetResponse {
-    pub fn to_offset(&self) -> std::result::Result<PartitionOffset, KafkaCode> {
+    pub fn to_offset(&self) -> Result<PartitionOffset, KafkaCode> {
         if let Some(code) = KafkaCode::from_protocol(self.error) {
             Err(code)
         } else {

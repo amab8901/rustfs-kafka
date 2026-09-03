@@ -61,6 +61,18 @@ pub const API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS: i16 = 0;
 pub const API_VERSION_DESCRIBE_PRODUCERS: i16 = 0;
 pub const API_VERSION_LIST_TRANSACTIONS: i16 = 2;
 pub const API_VERSION_DESCRIBE_TRANSACTIONS: i16 = 0;
+pub const API_VERSION_ALTER_CONFIGS: i16 = 2;
+pub const API_VERSION_ALTER_REPLICA_LOG_DIRS: i16 = 2;
+pub const API_VERSION_CREATE_DELEGATION_TOKEN: i16 = 3;
+pub const API_VERSION_RENEW_DELEGATION_TOKEN: i16 = 2;
+pub const API_VERSION_EXPIRE_DELEGATION_TOKEN: i16 = 2;
+pub const API_VERSION_ALTER_USER_SCRAM_CREDENTIALS: i16 = 0;
+pub const API_VERSION_ADD_OFFSETS_TO_TXN: i16 = 4;
+pub const API_VERSION_TXN_OFFSET_COMMIT: i16 = 5;
+pub const API_VERSION_ALTER_SHARE_GROUP_OFFSETS: i16 = 0;
+pub const API_VERSION_DELETE_SHARE_GROUP_OFFSETS: i16 = 0;
+pub const API_VERSION_UPDATE_FEATURES: i16 = 2;
+pub const API_VERSION_UNREGISTER_BROKER: i16 = 0;
 
 /// Map our `Compression` to `kafka_protocol::records::Compression`.
 pub fn to_kp_compression(c: Compression) -> kafka_protocol::records::Compression {
@@ -126,6 +138,14 @@ pub fn to_millis_i32(d: Duration) -> Result<i32> {
     }
 }
 
+pub fn to_millis_i64(d: Duration) -> Result<i64> {
+    let m = d
+        .as_secs()
+        .saturating_mul(1_000)
+        .saturating_add(u64::from(d.subsec_millis()));
+    i64::try_from(m).map_err(|_| Error::invalid_duration())
+}
+
 pub(crate) fn usize_to_i16(value: usize) -> Result<i16> {
     i16::try_from(value).map_err(|_| Error::codec())
 }
@@ -168,6 +188,30 @@ fn test_to_millis_i32() {
     assert_invalid(Duration::from_millis(i32::MAX as u64 + 1));
     assert_valid(Duration::from_millis(i32::MAX as u64 - 1), i32::MAX - 1);
     assert_valid(Duration::from_secs(1), 1_000);
+    assert_valid(Duration::ZERO, 0);
+}
+
+#[test]
+fn test_to_millis_i64() {
+    fn assert_invalid(d: Duration) {
+        match to_millis_i64(d) {
+            Err(Error::Protocol(ProtocolError::InvalidDuration)) => {}
+            other => panic!("Expected Err(InvalidDuration) but got {other:?}"),
+        }
+    }
+    fn assert_valid(d: Duration, expected_millis: i64) {
+        let r = to_millis_i64(d);
+        match r {
+            Ok(m) => assert_eq!(expected_millis, m),
+            Err(e) => panic!("Expected Ok({expected_millis}) but got Err({e:?})"),
+        }
+    }
+
+    assert_valid(Duration::from_millis(1_234), 1_234);
+    assert_valid(Duration::new(540, 123_456_789), 540_123);
+    assert_valid(Duration::from_millis(i64::MAX as u64), i64::MAX);
+    assert_invalid(Duration::from_millis(i64::MAX as u64 + 1));
+    assert_invalid(Duration::from_millis(u64::MAX));
     assert_valid(Duration::ZERO, 0);
 }
 
@@ -225,6 +269,18 @@ fn test_api_version_constants_are_positive() {
         API_VERSION_DESCRIBE_PRODUCERS,
         API_VERSION_LIST_TRANSACTIONS,
         API_VERSION_DESCRIBE_TRANSACTIONS,
+        API_VERSION_ALTER_CONFIGS,
+        API_VERSION_ALTER_REPLICA_LOG_DIRS,
+        API_VERSION_CREATE_DELEGATION_TOKEN,
+        API_VERSION_RENEW_DELEGATION_TOKEN,
+        API_VERSION_EXPIRE_DELEGATION_TOKEN,
+        API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+        API_VERSION_ADD_OFFSETS_TO_TXN,
+        API_VERSION_TXN_OFFSET_COMMIT,
+        API_VERSION_UPDATE_FEATURES,
+        API_VERSION_UNREGISTER_BROKER,
+        API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
+        API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
     ];
     assert!(versions.iter().all(|v| *v >= 0));
     assert_eq!(API_VERSION_LIST_PARTITION_REASSIGNMENTS, 0);
@@ -234,6 +290,11 @@ fn test_api_version_constants_are_positive() {
     assert_eq!(API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, 0);
     assert_eq!(API_VERSION_DESCRIBE_PRODUCERS, 0);
     assert_eq!(API_VERSION_DESCRIBE_TRANSACTIONS, 0);
+    assert_eq!(API_VERSION_ALTER_USER_SCRAM_CREDENTIALS, 0);
+    assert_eq!(API_VERSION_ADD_OFFSETS_TO_TXN, 4);
+    assert_eq!(API_VERSION_TXN_OFFSET_COMMIT, 5);
+    assert_eq!(API_VERSION_UPDATE_FEATURES, 2);
+    assert_eq!(API_VERSION_UNREGISTER_BROKER, 0);
 }
 
 #[cfg(test)]
@@ -261,6 +322,12 @@ mod proptests {
         fn to_millis_i32_valid_range(millis in 0u64..=2_147_483_647u64) {
             let d = Duration::from_millis(millis);
             assert!(to_millis_i32(d).is_ok());
+        }
+
+        #[test]
+        fn to_millis_i64_accepts_u64_values_in_i64_range(millis in 0u64..=i64::MAX as u64) {
+            let d = Duration::from_millis(millis);
+            prop_assert_eq!(to_millis_i64(d)?, i64::try_from(millis)?);
         }
     }
 }

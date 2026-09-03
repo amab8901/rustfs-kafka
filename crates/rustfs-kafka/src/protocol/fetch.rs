@@ -45,7 +45,7 @@ pub struct OwnedPartition {
     /// Partition id.
     pub partition: i32,
     /// Decoded partition data or a decoding error.
-    pub data: std::result::Result<OwnedData, Arc<Error>>,
+    pub data: Result<OwnedData, Arc<Error>>,
     /// High watermark offset for this partition (always available, even on errors).
     pub highwatermark: i64,
 }
@@ -74,7 +74,7 @@ impl OwnedPartition {
     /// # Errors
     ///
     /// Returns a reference to the stored error when decoding failed.
-    pub fn data(&self) -> std::result::Result<&OwnedData, &Arc<Error>> {
+    pub fn data(&self) -> Result<&OwnedData, &Arc<Error>> {
         self.data.as_ref()
     }
 }
@@ -175,7 +175,7 @@ pub fn convert_fetch_response(kp_resp: FetchResponse, correlation_id: i32) -> Ow
 fn decode_partition_records(
     records: Option<Bytes>,
     high_watermark: i64,
-) -> std::result::Result<OwnedData, Arc<Error>> {
+) -> Result<OwnedData, Arc<Error>> {
     let Some(mut records_bytes) = records else {
         return Ok(OwnedData {
             highwatermark_offset: high_watermark,

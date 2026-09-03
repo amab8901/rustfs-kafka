@@ -37,17 +37,9 @@ pub fn build_produce_request(
     > = std::collections::HashMap::new();
 
     for (topic, partition, key, value, headers) in messages {
-        let kp_headers: indexmap::IndexMap<
-            kafka_protocol::protocol::StrBytes,
-            Option<bytes::Bytes>,
-        > = headers
+        let kp_headers: indexmap::IndexMap<StrBytes, Option<bytes::Bytes>> = headers
             .iter()
-            .map(|(k, v)| {
-                (
-                    kafka_protocol::protocol::StrBytes::from_string(k.clone()),
-                    Some(v.clone()),
-                )
-            })
+            .map(|(k, v)| (StrBytes::from_string(k.clone()), Some(v.clone())))
             .collect();
 
         let record = Record {

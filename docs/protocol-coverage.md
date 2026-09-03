@@ -15,11 +15,11 @@ Source checked:
 ## Coverage Summary
 
 - Total `kafka-protocol` API keys: 87.
-- Public or high-level runtime coverage: 40 APIs.
+- Public or high-level runtime coverage: 52 APIs.
 - Internal runtime coverage without direct public API: 10 APIs.
-- Client-facing backlog: 8 APIs.
-- Advanced runtime backlog: 10 APIs.
-- Broker/controller/internal backlog: 19 APIs.
+- Client-facing backlog: 0 APIs.
+- Advanced runtime backlog: 7 APIs (share-consumer and telemetry subsystems).
+- Broker/controller/internal backlog: 18 APIs (quorum, coordinator, KRaft internals).
 
 ## API Matrix
 
@@ -46,22 +46,22 @@ Source checked:
 | 22 | InitProducerId | Internal transactional producer runtime implemented | Keep internal; extend only through transaction producer API. |
 | 23 | OffsetForLeaderEpoch | Public diagnostic implemented | Done. |
 | 24 | AddPartitionsToTxn | Internal transactional producer runtime implemented | Keep internal. |
-| 25 | AddOffsetsToTxn | Missing advanced transaction runtime API | Add when transactional offset commit workflow is implemented. |
+| 25 | AddOffsetsToTxn | Public advanced transaction implemented | Done. |
 | 26 | EndTxn | Internal transactional producer runtime implemented | Keep internal. |
 | 27 | WriteTxnMarkers | Missing coordinator-internal API | Do not expose as normal client API. |
-| 28 | TxnOffsetCommit | Missing advanced transaction runtime API | Add when transactional consumer offset commit workflow is implemented. |
+| 28 | TxnOffsetCommit | Public advanced transaction implemented | Done. |
 | 29 | DescribeAcls | Public admin implemented | Done. |
 | 30 | CreateAcls | Public admin implemented | Done. |
 | 31 | DeleteAcls | Public admin implemented | Done. |
 | 32 | DescribeConfigs | Public admin implemented | Done. |
-| 33 | AlterConfigs | Missing client-facing admin API | Prefer `IncrementalAlterConfigs`; expose legacy API only if compatibility requires it. |
-| 34 | AlterReplicaLogDirs | Missing client-facing admin API | Add advanced broker storage reassignment helper. |
+| 33 | AlterConfigs | Public legacy admin implemented, deprecated | Prefer `IncrementalAlterConfigs`; kept only for compatibility. |
+| 34 | AlterReplicaLogDirs | Public broker storage admin implemented | Done. |
 | 35 | DescribeLogDirs | Public admin implemented | Done. |
 | 36 | SaslAuthenticate | Internal auth runtime implemented | Keep internal auth flow. |
 | 37 | CreatePartitions | Public admin implemented | Done. |
-| 38 | CreateDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
-| 39 | RenewDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
-| 40 | ExpireDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
+| 38 | CreateDelegationToken | Public security admin implemented | Done. |
+| 39 | RenewDelegationToken | Public security admin implemented | Done. |
+| 40 | ExpireDelegationToken | Public security admin implemented | Done. |
 | 41 | DescribeDelegationToken | Public admin implemented | Done. |
 | 42 | DeleteGroups | Public admin implemented | Done. |
 | 43 | ElectLeaders | Public admin implemented | Done. |
@@ -72,20 +72,20 @@ Source checked:
 | 48 | DescribeClientQuotas | Public admin implemented | Done. |
 | 49 | AlterClientQuotas | Public admin implemented | Done. |
 | 50 | DescribeUserScramCredentials | Public admin implemented | Done. |
-| 51 | AlterUserScramCredentials | Missing client-facing security API | Add public SCRAM credential mutation helper with careful docs. |
+| 51 | AlterUserScramCredentials | Public security admin implemented | Done; caller supplies precomputed SCRAM salt and salted password bytes. |
 | 52 | Vote | Missing quorum-internal API | Do not expose as normal client API. |
 | 53 | BeginQuorumEpoch | Missing quorum-internal API | Do not expose as normal client API. |
 | 54 | EndQuorumEpoch | Missing quorum-internal API | Do not expose as normal client API. |
 | 55 | DescribeQuorum | Public admin implemented | Done. |
 | 56 | AlterPartition | Missing controller/internal API | Keep internal unless a controller client is deliberately added. |
-| 57 | UpdateFeatures | Missing cluster feature admin API | Add only with explicit safety docs and version-gate handling. |
+| 57 | UpdateFeatures | Public KRaft feature admin implemented | Done; prefer `validate_only` before applying changes. |
 | 58 | Envelope | Missing broker/controller forwarding API | Do not expose as normal client API. |
 | 59 | FetchSnapshot | Missing raft snapshot API | Do not expose as normal client API. |
 | 60 | DescribeCluster | Public admin implemented | Done. |
 | 61 | DescribeProducers | Public diagnostic implemented | Done. |
 | 62 | BrokerRegistration | Missing broker-internal API | Do not expose as normal client API. |
 | 63 | BrokerHeartbeat | Missing broker-internal API | Do not expose as normal client API. |
-| 64 | UnregisterBroker | Missing cluster admin/internal API | Expose only if broker lifecycle admin is explicitly needed. |
+| 64 | UnregisterBroker | Public KRaft broker lifecycle admin implemented | Done; destructive cluster operation. |
 | 65 | DescribeTransactions | Public diagnostic implemented | Done. |
 | 66 | ListTransactions | Public diagnostic implemented | Done. |
 | 67 | AllocateProducerIds | Missing broker/internal producer-id API | Keep internal unless idempotent producer allocation is redesigned. |
@@ -110,15 +110,15 @@ Source checked:
 | 86 | DeleteShareGroupState | Missing share coordinator internal API | Do not expose as normal client API. |
 | 87 | ReadShareGroupStateSummary | Missing share coordinator internal API | Do not expose as normal client API. |
 | 90 | DescribeShareGroupOffsets | Public diagnostic implemented | Done. |
-| 91 | AlterShareGroupOffsets | Missing client-facing share-group admin API | Add after request semantics are wrapped carefully. |
-| 92 | DeleteShareGroupOffsets | Missing client-facing share-group admin API | Add after request semantics are wrapped carefully. |
+| 91 | AlterShareGroupOffsets | Public share-group admin implemented | Done. |
+| 92 | DeleteShareGroupOffsets | Public share-group admin implemented | Done. |
 
 ## Recommended Implementation Batches
 
-1. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
-2. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
-3. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
-4. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
-5. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
-   `RemoveRaftVoter`, `UpdateRaftVoter`, `UnregisterBroker`.
-6. Legacy compatibility only: `AlterConfigs` whole-resource config replacement.
+All client-facing admin APIs are now implemented. Remaining work falls into advanced
+runtime subsystems or internal-only protocols:
+
+1. Share consumer runtime: `ConsumerGroupHeartbeat`, `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
+2. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
+3. Explicitly scoped KRaft/JBOD admin: `AssignReplicasToDirs`, `AddRaftVoter`, `RemoveRaftVoter`, `UpdateRaftVoter`.
+4. Keep broker, controller, coordinator, and raft-log internals unexposed unless a dedicated controller client is introduced.

@@ -61,22 +61,32 @@ pub use crate::protocol::admin::{
     ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
     ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclBinding, AclDescription,
-    AclResource, ActiveProducer, AlterClientQuotaEntryResult, AlterClientQuotasOptions,
-    AlterClientQuotasResponseData, AlterPartitionReassignmentsOptions,
+    AclResource, ActiveProducer, AddOffsetsToTxnResponseData, AlterClientQuotaEntryResult,
+    AlterClientQuotasOptions, AlterClientQuotasResponseData, AlterConfigsEntry,
+    AlterConfigsOptions, AlterConfigsResource, AlterConfigsResourceResult,
+    AlterConfigsResponseData, AlterPartitionReassignmentsOptions,
     AlterPartitionReassignmentsPartitionResult, AlterPartitionReassignmentsResponseData,
-    AlterPartitionReassignmentsTopicResult, CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
-    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, CONFIG_OPERATION_APPEND,
-    CONFIG_OPERATION_DELETE, CONFIG_OPERATION_SET, CONFIG_OPERATION_SUBTRACT,
-    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC,
-    ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter,
-    ClientQuotaEntitySpec, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
-    ConfigResource, ConfigSynonym, ConsumerGroupAssignment, ConsumerGroupDescribeResponseData,
-    ConsumerGroupDescription, ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions,
-    CreateAclResult, CreateAclsResponseData, CreatePartitionsOptions, CreatePartitionsResponseData,
-    CreatePartitionsTopicResult, CreatePartitionsTopicSpec, DelegationTokenDescription,
-    DeleteAclsFilterResult, DeleteAclsResponseData, DeleteGroupsResponseData,
-    DeleteRecordsPartitionResult, DeleteRecordsPartitionSpec, DeleteRecordsResponseData,
-    DeleteRecordsTopicResult, DeleteRecordsTopicSpec, DeletedAcl, DeletedGroup, DescribeAclsFilter,
+    AlterPartitionReassignmentsTopicResult, AlterReplicaLogDir, AlterReplicaLogDirPartitionResult,
+    AlterReplicaLogDirTopic, AlterReplicaLogDirTopicResult, AlterReplicaLogDirsResponseData,
+    AlterShareGroupOffsetPartition, AlterShareGroupOffsetPartitionResult,
+    AlterShareGroupOffsetTopic, AlterShareGroupOffsetTopicResult,
+    AlterShareGroupOffsetsResponseData, AlterUserScramCredentialResult,
+    AlterUserScramCredentialsOptions, AlterUserScramCredentialsResponseData,
+    CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT,
+    CONFIG_OPERATION_APPEND, CONFIG_OPERATION_DELETE, CONFIG_OPERATION_SET,
+    CONFIG_OPERATION_SUBTRACT, CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER,
+    CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntity,
+    ClientQuotaEntityFilter, ClientQuotaEntitySpec, ClientQuotaEntry, ClientQuotaValue,
+    ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym, ConsumerGroupAssignment,
+    ConsumerGroupDescribeResponseData, ConsumerGroupDescription, ConsumerGroupMemberDescription,
+    ConsumerGroupTopicPartitions, CreateAclResult, CreateAclsResponseData,
+    CreateDelegationTokenOptions, CreateDelegationTokenResponseData, CreatePartitionsOptions,
+    CreatePartitionsResponseData, CreatePartitionsTopicResult, CreatePartitionsTopicSpec,
+    DelegationTokenDescription, DeleteAclsFilterResult, DeleteAclsResponseData,
+    DeleteGroupsResponseData, DeleteRecordsPartitionResult, DeleteRecordsPartitionSpec,
+    DeleteRecordsResponseData, DeleteRecordsTopicResult, DeleteRecordsTopicSpec,
+    DeleteShareGroupOffsetTopic, DeleteShareGroupOffsetTopicResult,
+    DeleteShareGroupOffsetsResponseData, DeletedAcl, DeletedGroup, DescribeAclsFilter,
     DescribeAclsResponseData, DescribeClientQuotasOptions, DescribeClientQuotasResponseData,
     DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
     DescribeDelegationTokenResponseData, DescribeGroupsResponseData, DescribeLogDirsResponseData,
@@ -87,6 +97,8 @@ pub use crate::protocol::admin::{
     DescribedTopicPartition, DescribedTopicPartitionsTopic, DescribedTransaction,
     ELECTION_TYPE_PREFERRED, ELECTION_TYPE_UNCLEAN, ElectLeadersOptions,
     ElectLeadersPartitionResult, ElectLeadersResponseData, ElectLeadersTopicResult,
+    ExpireDelegationTokenResponseData, FEATURE_UPGRADE_TYPE_SAFE_DOWNGRADE,
+    FEATURE_UPGRADE_TYPE_UNSAFE_DOWNGRADE, FEATURE_UPGRADE_TYPE_UPGRADE, FeatureUpdate,
     IncrementalAlterConfig, IncrementalAlterConfigsOptions, IncrementalAlterConfigsResource,
     IncrementalAlterConfigsResourceResult, IncrementalAlterConfigsResponseData, KafkaPrincipal,
     LeaderEpochPartitionOffset, LeaderEpochPartitionRequest, LeaderEpochTopicOffsets,
@@ -96,12 +108,15 @@ pub use crate::protocol::admin::{
     LogDirTopic, OffsetDeletePartitionResult, OffsetDeleteResponseData, OffsetDeleteTopicResult,
     OffsetForLeaderEpochResponseData, PartitionReassignment, PartitionReassignmentSpec,
     PartitionReassignmentTopicSpec, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
-    QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
-    SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, ShareGroupAssignment,
-    ShareGroupDescribeResponseData, ShareGroupDescription, ShareGroupMemberDescription,
-    ShareGroupOffsetGroup, ShareGroupOffsetPartition, ShareGroupOffsetRequest,
-    ShareGroupOffsetTopic, ShareGroupTopicPartitions, TopicPartitionFilter, TopicPartitionsCursor,
-    TopicReassignment, TransactionTopic, UserScramCredentialsDescription,
+    QuorumPartition, QuorumReplicaState, QuorumTopic, RenewDelegationTokenResponseData,
+    SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, ScramCredentialDeletion, ScramCredentialInfo,
+    ScramCredentialUpsertion, ShareGroupAssignment, ShareGroupDescribeResponseData,
+    ShareGroupDescription, ShareGroupMemberDescription, ShareGroupOffsetGroup,
+    ShareGroupOffsetPartition, ShareGroupOffsetRequest, ShareGroupOffsetTopic,
+    ShareGroupTopicPartitions, TopicPartitionFilter, TopicPartitionsCursor, TopicReassignment,
+    TransactionTopic, TxnOffsetCommitPartitionResult, TxnOffsetCommitResponseData,
+    TxnOffsetCommitTopicPartition, TxnOffsetCommitTopicResult, UnregisterBrokerResponseData,
+    UpdateFeaturesResponseData, UpdateFeaturesResult, UserScramCredentialsDescription,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
@@ -157,7 +172,7 @@ pub mod fetch {
 }
 
 use config::ClientConfig;
-
+use config::RetryPolicy::{Exponential, Fixed};
 // --------------------------------------------------------------------
 
 /// Possible values when querying a topic's offset.
@@ -400,7 +415,7 @@ pub struct KafkaClient {
     config: ClientConfig,
     conn_pool: network::Connections,
     state: state::ClientState,
-    api_versions: crate::protocol::api_versions::ApiVersionCache,
+    api_versions: protocol::api_versions::ApiVersionCache,
 }
 
 impl KafkaClient {
@@ -569,9 +584,9 @@ impl KafkaClient {
     /// Set the initial backoff/delay used by the retry policy.
     pub fn set_retry_backoff_time(&mut self, time: Duration) {
         match &mut self.config.retry.policy {
-            config::RetryPolicy::Exponential { initial, .. } => *initial = time,
-            config::RetryPolicy::Fixed { interval, .. } => *interval = time,
-            config::RetryPolicy::None => {}
+            Exponential { initial, .. } => *initial = time,
+            Fixed { interval, .. } => *interval = time,
+            RetryPolicy::None => {}
         }
     }
 
@@ -735,7 +750,7 @@ impl KafkaClient {
                 }
             };
 
-            match crate::protocol::create_topics::fetch_create_topics(
+            match protocol::create_topics::fetch_create_topics(
                 conn,
                 correlation_id,
                 &self.config.client_id,
@@ -777,7 +792,7 @@ impl KafkaClient {
                 }
             };
 
-            match crate::protocol::delete_topics::fetch_delete_topics(
+            match protocol::delete_topics::fetch_delete_topics(
                 conn,
                 correlation_id,
                 &self.config.client_id,
@@ -815,7 +830,7 @@ impl KafkaClient {
                 }
             };
 
-            match crate::protocol::api_versions::fetch_api_versions_data(
+            match protocol::api_versions::fetch_api_versions_data(
                 conn,
                 correlation_id,
                 &self.config.client_id,
@@ -823,7 +838,7 @@ impl KafkaClient {
                 Ok(resp) => {
                     self.api_versions.insert(
                         host,
-                        crate::protocol::api_versions::BrokerApiVersions::from_api_versions(
+                        protocol::api_versions::BrokerApiVersions::from_api_versions(
                             &resp.api_keys,
                         ),
                     );
@@ -871,7 +886,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_cluster_request(
+            let (header, request) = protocol::admin::build_describe_cluster_request(
                 correlation_id,
                 &self.config.client_id,
                 include_authorized_operations,
@@ -881,18 +896,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_CLUSTER,
+                protocol::API_VERSION_DESCRIBE_CLUSTER,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeClusterResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_CLUSTER,
+                    protocol::API_VERSION_DESCRIBE_CLUSTER,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_cluster_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_describe_cluster_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeCluster")),
             }
@@ -935,7 +948,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_acls_request(
+            let (header, request) = protocol::admin::build_describe_acls_request(
                 correlation_id,
                 &self.config.client_id,
                 filter,
@@ -944,16 +957,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_ACLS,
+                protocol::API_VERSION_DESCRIBE_ACLS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeAclsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_ACLS,
+                    protocol::API_VERSION_DESCRIBE_ACLS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_acls_response(resp));
+                    return Ok(protocol::admin::convert_describe_acls_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeAcls")),
             }
@@ -982,7 +995,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_create_acls_request(
+            let (header, request) = protocol::admin::build_create_acls_request(
                 correlation_id,
                 &self.config.client_id,
                 bindings,
@@ -991,16 +1004,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_CREATE_ACLS,
+                protocol::API_VERSION_CREATE_ACLS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::CreateAclsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_CREATE_ACLS,
+                    protocol::API_VERSION_CREATE_ACLS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_create_acls_response(resp));
+                    return Ok(protocol::admin::convert_create_acls_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "CreateAcls")),
             }
@@ -1034,7 +1047,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_delete_acls_request(
+            let (header, request) = protocol::admin::build_delete_acls_request(
                 correlation_id,
                 &self.config.client_id,
                 filters,
@@ -1043,16 +1056,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DELETE_ACLS,
+                protocol::API_VERSION_DELETE_ACLS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DeleteAclsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DELETE_ACLS,
+                    protocol::API_VERSION_DELETE_ACLS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_delete_acls_response(resp));
+                    return Ok(protocol::admin::convert_delete_acls_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteAcls")),
             }
@@ -1100,7 +1113,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_configs_request(
+            let (header, request) = protocol::admin::build_describe_configs_request(
                 correlation_id,
                 &self.config.client_id,
                 resources,
@@ -1111,18 +1124,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_CONFIGS,
+                protocol::API_VERSION_DESCRIBE_CONFIGS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeConfigsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_CONFIGS,
+                    protocol::API_VERSION_DESCRIBE_CONFIGS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_configs_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_describe_configs_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeConfigs")),
             }
@@ -1156,7 +1167,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_incremental_alter_configs_request(
+            let (header, request) = protocol::admin::build_incremental_alter_configs_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -1165,19 +1176,125 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS,
+                protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::IncrementalAlterConfigsResponse,
-                >(conn, crate::protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS)
+                >(conn, protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS)
             }) {
                 Ok(resp) => {
-                    return Ok(
-                        crate::protocol::admin::convert_incremental_alter_configs_response(resp),
-                    );
+                    return Ok(protocol::admin::convert_incremental_alter_configs_response(
+                        resp,
+                    ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "IncrementalAlterConfigs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Alters broker or topic configs with Kafka's legacy whole-resource `AlterConfigs` API.
+    ///
+    /// Prefer [`incremental_alter_configs`](Self::incremental_alter_configs) for new code.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    #[deprecated(
+        since = "1.2.0",
+        note = "use incremental_alter_configs for incremental config mutation"
+    )]
+    pub fn alter_configs(
+        &mut self,
+        options: &AlterConfigsOptions,
+    ) -> Result<AlterConfigsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterConfigs"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_alter_configs_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ALTER_CONFIGS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::AlterConfigsResponse>(
+                    conn,
+                    protocol::API_VERSION_ALTER_CONFIGS,
+                )
+            }) {
+                Ok(resp) => return Ok(protocol::admin::convert_alter_configs_response(resp)),
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterConfigs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Moves selected replicas to broker log directories.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn alter_replica_log_dirs(
+        &mut self,
+        dirs: &[AlterReplicaLogDir],
+    ) -> Result<AlterReplicaLogDirsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterReplicaLogDirs"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_alter_replica_log_dirs_request(
+                correlation_id,
+                &self.config.client_id,
+                dirs,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ALTER_REPLICA_LOG_DIRS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::AlterReplicaLogDirsResponse>(
+                    conn,
+                    protocol::API_VERSION_ALTER_REPLICA_LOG_DIRS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_alter_replica_log_dirs_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterReplicaLogDirs")),
             }
         }
 
@@ -1223,7 +1340,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_delegation_token_request(
+            let (header, request) = protocol::admin::build_describe_delegation_token_request(
                 correlation_id,
                 &self.config.client_id,
                 owners,
@@ -1232,19 +1349,185 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+                protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::DescribeDelegationTokenResponse,
-                >(conn, crate::protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN)
+                >(conn, protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN)
             }) {
                 Ok(resp) => {
-                    return Ok(
-                        crate::protocol::admin::convert_describe_delegation_token_response(resp),
-                    );
+                    return Ok(protocol::admin::convert_describe_delegation_token_response(
+                        resp,
+                    ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeDelegationToken")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Creates a Kafka delegation token.
+    ///
+    /// The returned HMAC is sensitive credential material and can be passed to
+    /// [`renew_delegation_token`](Self::renew_delegation_token) or
+    /// [`expire_delegation_token`](Self::expire_delegation_token).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn create_delegation_token(
+        &mut self,
+        options: &CreateDelegationTokenOptions,
+    ) -> Result<CreateDelegationTokenResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "CreateDelegationToken"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_create_delegation_token_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_CREATE_DELEGATION_TOKEN,
+            )
+                .and_then(|()| {
+                    transport::kp_get_response::<
+                        kafka_protocol::messages::CreateDelegationTokenResponse,
+                    >(
+                        conn,
+                        protocol::API_VERSION_CREATE_DELEGATION_TOKEN,
+                    )
+                }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_create_delegation_token_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "CreateDelegationToken")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Renews a Kafka delegation token by HMAC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the duration cannot fit Kafka's millisecond field,
+    /// brokers are unreachable, or the broker response cannot be decoded.
+    pub fn renew_delegation_token(
+        &mut self,
+        hmac: &[u8],
+        renew_period: Duration,
+    ) -> Result<RenewDelegationTokenResponseData> {
+        let renew_period_ms = protocol::to_millis_i64(renew_period)?;
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "RenewDelegationToken"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_renew_delegation_token_request(
+                correlation_id,
+                &self.config.client_id,
+                bytes::Bytes::copy_from_slice(hmac),
+                renew_period_ms,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_RENEW_DELEGATION_TOKEN,
+            )
+                .and_then(|()| {
+                    transport::kp_get_response::<kafka_protocol::messages::RenewDelegationTokenResponse>(
+                        conn,
+                        protocol::API_VERSION_RENEW_DELEGATION_TOKEN,
+                    )
+                }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_renew_delegation_token_response(&resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "RenewDelegationToken")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Expires a Kafka delegation token by HMAC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the duration cannot fit Kafka's millisecond field,
+    /// brokers are unreachable, or the broker response cannot be decoded.
+    pub fn expire_delegation_token(
+        &mut self,
+        hmac: &[u8],
+        expiry_period: Duration,
+    ) -> Result<ExpireDelegationTokenResponseData> {
+        let expiry_period_ms = protocol::to_millis_i64(expiry_period)?;
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ExpireDelegationToken"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_expire_delegation_token_request(
+                correlation_id,
+                &self.config.client_id,
+                bytes::Bytes::copy_from_slice(hmac),
+                expiry_period_ms,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_EXPIRE_DELEGATION_TOKEN,
+            )
+                .and_then(|()| {
+                    transport::kp_get_response::<
+                        kafka_protocol::messages::ExpireDelegationTokenResponse,
+                    >(
+                        conn,
+                        protocol::API_VERSION_EXPIRE_DELEGATION_TOKEN,
+                    )
+                }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_expire_delegation_token_response(&resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ExpireDelegationToken")),
             }
         }
 
@@ -1293,7 +1576,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_log_dirs_request(
+            let (header, request) = protocol::admin::build_describe_log_dirs_request(
                 correlation_id,
                 &self.config.client_id,
                 topics,
@@ -1302,18 +1585,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_LOG_DIRS,
+                protocol::API_VERSION_DESCRIBE_LOG_DIRS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeLogDirsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_LOG_DIRS,
+                    protocol::API_VERSION_DESCRIBE_LOG_DIRS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_log_dirs_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_describe_log_dirs_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeLogDirs")),
             }
@@ -1336,7 +1617,7 @@ impl KafkaClient {
         topics: &[DeleteRecordsTopicSpec],
         timeout: Duration,
     ) -> Result<DeleteRecordsResponseData> {
-        let timeout_ms = crate::protocol::to_millis_i32(timeout)?;
+        let timeout_ms = protocol::to_millis_i32(timeout)?;
         let correlation_id = self.state.next_correlation_id();
         let now = std::time::Instant::now();
         let hosts = self.config.hosts.clone();
@@ -1351,7 +1632,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_delete_records_request(
+            let (header, request) = protocol::admin::build_delete_records_request(
                 correlation_id,
                 &self.config.client_id,
                 topics,
@@ -1361,18 +1642,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DELETE_RECORDS,
+                protocol::API_VERSION_DELETE_RECORDS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DeleteRecordsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DELETE_RECORDS,
+                    protocol::API_VERSION_DELETE_RECORDS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_delete_records_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_delete_records_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteRecords")),
             }
@@ -1413,7 +1692,7 @@ impl KafkaClient {
         topics: Option<&[TopicPartitionFilter]>,
         timeout: Duration,
     ) -> Result<ListPartitionReassignmentsResponseData> {
-        let timeout_ms = crate::protocol::to_millis_i32(timeout)?;
+        let timeout_ms = protocol::to_millis_i32(timeout)?;
         let correlation_id = self.state.next_correlation_id();
         let now = std::time::Instant::now();
         let hosts = self.config.hosts.clone();
@@ -1428,30 +1707,26 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) =
-                crate::protocol::admin::build_list_partition_reassignments_request(
-                    correlation_id,
-                    &self.config.client_id,
-                    topics,
-                    timeout_ms,
-                );
+            let (header, request) = protocol::admin::build_list_partition_reassignments_request(
+                correlation_id,
+                &self.config.client_id,
+                topics,
+                timeout_ms,
+            );
             match transport::kp_send_request(
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+                protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::ListPartitionReassignmentsResponse,
-                >(
-                    conn,
-                    crate::protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-                )
+                >(conn, protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS)
             }) {
                 Ok(resp) => {
                     return Ok(
-                        crate::protocol::admin::convert_list_partition_reassignments_response(resp),
+                        protocol::admin::convert_list_partition_reassignments_response(resp),
                     );
                 }
                 Err(e) => {
@@ -1489,31 +1764,25 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) =
-                crate::protocol::admin::build_alter_partition_reassignments_request(
-                    correlation_id,
-                    &self.config.client_id,
-                    options,
-                );
+            let (header, request) = protocol::admin::build_alter_partition_reassignments_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
             match transport::kp_send_request(
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+                protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::AlterPartitionReassignmentsResponse,
-                >(
-                    conn,
-                    crate::protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
-                )
+                >(conn, protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS)
             }) {
                 Ok(resp) => {
                     return Ok(
-                        crate::protocol::admin::convert_alter_partition_reassignments_response(
-                            resp,
-                        ),
+                        protocol::admin::convert_alter_partition_reassignments_response(resp),
                     );
                 }
                 Err(e) => {
@@ -1548,7 +1817,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_quorum_request(
+            let (header, request) = protocol::admin::build_describe_quorum_request(
                 correlation_id,
                 &self.config.client_id,
                 topics,
@@ -1557,20 +1826,123 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_QUORUM,
+                protocol::API_VERSION_DESCRIBE_QUORUM,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeQuorumResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_QUORUM,
+                    protocol::API_VERSION_DESCRIBE_QUORUM,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_quorum_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_describe_quorum_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeQuorum")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Updates finalized `KRaft` feature levels.
+    ///
+    /// This is a cluster-wide metadata mutation. Prefer calling with
+    /// `validate_only = true` before applying feature upgrades or downgrades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn update_features(
+        &mut self,
+        feature_updates: &[FeatureUpdate],
+        validate_only: bool,
+    ) -> Result<UpdateFeaturesResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "UpdateFeatures"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_update_features_request(
+                correlation_id,
+                &self.config.client_id,
+                feature_updates,
+                validate_only,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_UPDATE_FEATURES,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::UpdateFeaturesResponse>(
+                    conn,
+                    protocol::API_VERSION_UPDATE_FEATURES,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_update_features_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "UpdateFeatures")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Unregisters a broker from the `KRaft` cluster metadata.
+    ///
+    /// This is a destructive cluster lifecycle operation. Call it only after
+    /// the broker has been intentionally removed from service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn unregister_broker(&mut self, broker_id: i32) -> Result<UnregisterBrokerResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "UnregisterBroker"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_unregister_broker_request(
+                correlation_id,
+                &self.config.client_id,
+                broker_id,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_UNREGISTER_BROKER,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::UnregisterBrokerResponse>(
+                    conn,
+                    protocol::API_VERSION_UNREGISTER_BROKER,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_unregister_broker_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "UnregisterBroker")),
             }
         }
 
@@ -1603,7 +1975,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_elect_leaders_request(
+            let (header, request) = protocol::admin::build_elect_leaders_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -1612,16 +1984,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_ELECT_LEADERS,
+                protocol::API_VERSION_ELECT_LEADERS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::ElectLeadersResponse>(
                     conn,
-                    crate::protocol::API_VERSION_ELECT_LEADERS,
+                    protocol::API_VERSION_ELECT_LEADERS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_elect_leaders_response(resp));
+                    return Ok(protocol::admin::convert_elect_leaders_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ElectLeaders")),
             }
@@ -1642,7 +2014,7 @@ impl KafkaClient {
         timeout: Duration,
     ) -> Result<ElectLeadersResponseData> {
         let options = ElectLeadersOptions::new(ELECTION_TYPE_PREFERRED, topics.iter().cloned())
-            .with_timeout_ms(crate::protocol::to_millis_i32(timeout)?);
+            .with_timeout_ms(protocol::to_millis_i32(timeout)?);
         self.elect_leaders(&options)
     }
 
@@ -1658,7 +2030,7 @@ impl KafkaClient {
         timeout: Duration,
     ) -> Result<ElectLeadersResponseData> {
         let options = ElectLeadersOptions::new(ELECTION_TYPE_UNCLEAN, topics.iter().cloned())
-            .with_timeout_ms(crate::protocol::to_millis_i32(timeout)?);
+            .with_timeout_ms(protocol::to_millis_i32(timeout)?);
         self.elect_leaders(&options)
     }
 
@@ -1694,7 +2066,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_list_config_resources_request(
+            let (header, request) = protocol::admin::build_list_config_resources_request(
                 correlation_id,
                 &self.config.client_id,
                 resource_types,
@@ -1703,18 +2075,18 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_LIST_CONFIG_RESOURCES,
+                protocol::API_VERSION_LIST_CONFIG_RESOURCES,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::ListConfigResourcesResponse>(
                     conn,
-                    crate::protocol::API_VERSION_LIST_CONFIG_RESOURCES,
+                    protocol::API_VERSION_LIST_CONFIG_RESOURCES,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(
-                        crate::protocol::admin::convert_list_config_resources_response(resp),
-                    );
+                    return Ok(protocol::admin::convert_list_config_resources_response(
+                        resp,
+                    ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ListConfigResources")),
             }
@@ -1759,7 +2131,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_create_partitions_request(
+            let (header, request) = protocol::admin::build_create_partitions_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -1768,18 +2140,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_CREATE_PARTITIONS,
+                protocol::API_VERSION_CREATE_PARTITIONS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::CreatePartitionsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_CREATE_PARTITIONS,
+                    protocol::API_VERSION_CREATE_PARTITIONS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_create_partitions_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_create_partitions_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "CreatePartitions")),
             }
@@ -1830,7 +2200,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_topic_partitions_request(
+            let (header, request) = protocol::admin::build_describe_topic_partitions_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -1839,17 +2209,17 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+                protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::DescribeTopicPartitionsResponse,
-                >(conn, crate::protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS)
+                >(conn, protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS)
             }) {
                 Ok(resp) => {
-                    return Ok(
-                        crate::protocol::admin::convert_describe_topic_partitions_response(resp),
-                    );
+                    return Ok(protocol::admin::convert_describe_topic_partitions_response(
+                        resp,
+                    ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTopicPartitions")),
             }
@@ -1890,7 +2260,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_client_quotas_request(
+            let (header, request) = protocol::admin::build_describe_client_quotas_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -1899,18 +2269,18 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+                protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DescribeClientQuotasResponse,
-                >(
-                    conn,
-                    crate::protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
-                )
-            }) {
+                .and_then(|()| {
+                    transport::kp_get_response::<
+                        kafka_protocol::messages::DescribeClientQuotasResponse,
+                    >(
+                        conn,
+                        protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+                    )
+                }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_client_quotas_response(
+                    return Ok(protocol::admin::convert_describe_client_quotas_response(
                         resp,
                     ));
                 }
@@ -1944,7 +2314,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_alter_client_quotas_request(
+            let (header, request) = protocol::admin::build_alter_client_quotas_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -1953,16 +2323,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
+                protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::AlterClientQuotasResponse>(
                     conn,
-                    crate::protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
+                    protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_alter_client_quotas_response(resp));
+                    return Ok(protocol::admin::convert_alter_client_quotas_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "AlterClientQuotas")),
             }
@@ -2012,35 +2382,86 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) =
-                crate::protocol::admin::build_describe_user_scram_credentials_request(
-                    correlation_id,
-                    &self.config.client_id,
-                    users,
-                );
+            let (header, request) = protocol::admin::build_describe_user_scram_credentials_request(
+                correlation_id,
+                &self.config.client_id,
+                users,
+            );
             match transport::kp_send_request(
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+                protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::DescribeUserScramCredentialsResponse,
-                >(
-                    conn,
-                    crate::protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-                )
+                >(conn, protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS)
             }) {
                 Ok(resp) => {
                     return Ok(
-                        crate::protocol::admin::convert_describe_user_scram_credentials_response(
-                            resp,
-                        ),
+                        protocol::admin::convert_describe_user_scram_credentials_response(resp),
                     );
                 }
                 Err(e) => {
                     last_err = Some(e.with_broker_context(&host, "DescribeUserScramCredentials"));
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Alters SCRAM credentials for Kafka users.
+    ///
+    /// Upsertions require precomputed `salt` and `salted_password` bytes for the selected SCRAM
+    /// mechanism. This mirrors Kafka's protocol and avoids guessing password derivation policy in
+    /// the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn alter_user_scram_credentials(
+        &mut self,
+        options: &AlterUserScramCredentialsOptions,
+    ) -> Result<AlterUserScramCredentialsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterUserScramCredentials"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_alter_user_scram_credentials_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::AlterUserScramCredentialsResponse,
+                >(conn, protocol::API_VERSION_ALTER_USER_SCRAM_CREDENTIALS)
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        protocol::admin::convert_alter_user_scram_credentials_response(resp),
+                    );
+                }
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterUserScramCredentials"));
                 }
             }
         }
@@ -2071,7 +2492,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_producers_request(
+            let (header, request) = protocol::admin::build_describe_producers_request(
                 correlation_id,
                 &self.config.client_id,
                 topics,
@@ -2080,18 +2501,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_PRODUCERS,
+                protocol::API_VERSION_DESCRIBE_PRODUCERS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeProducersResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_PRODUCERS,
+                    protocol::API_VERSION_DESCRIBE_PRODUCERS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_producers_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_describe_producers_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeProducers")),
             }
@@ -2123,7 +2542,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_offset_for_leader_epoch_request(
+            let (header, request) = protocol::admin::build_offset_for_leader_epoch_request(
                 correlation_id,
                 &self.config.client_id,
                 topics,
@@ -2132,16 +2551,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+                protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH,
             )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::OffsetForLeaderEpochResponse,
-                >(conn, crate::protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH)
-            }) {
+                .and_then(|()| {
+                    transport::kp_get_response::<
+                        kafka_protocol::messages::OffsetForLeaderEpochResponse,
+                    >(conn, protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH)
+                }) {
                 Ok(resp) => {
                     return Ok(
-                        crate::protocol::admin::convert_offset_for_leader_epoch_response(resp),
+                        protocol::admin::convert_offset_for_leader_epoch_response(resp),
                     );
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "OffsetForLeaderEpoch")),
@@ -2183,7 +2602,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_list_transactions_request(
+            let (header, request) = protocol::admin::build_list_transactions_request(
                 correlation_id,
                 &self.config.client_id,
                 options,
@@ -2192,18 +2611,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_LIST_TRANSACTIONS,
+                protocol::API_VERSION_LIST_TRANSACTIONS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::ListTransactionsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_LIST_TRANSACTIONS,
+                    protocol::API_VERSION_LIST_TRANSACTIONS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_list_transactions_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_list_transactions_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ListTransactions")),
             }
@@ -2235,7 +2652,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_transactions_request(
+            let (header, request) = protocol::admin::build_describe_transactions_request(
                 correlation_id,
                 &self.config.client_id,
                 transactional_ids,
@@ -2244,22 +2661,136 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
+                protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
             )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DescribeTransactionsResponse,
-                >(
-                    conn,
-                    crate::protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
-                )
-            }) {
+                .and_then(|()| {
+                    transport::kp_get_response::<
+                        kafka_protocol::messages::DescribeTransactionsResponse,
+                    >(
+                        conn,
+                        protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
+                    )
+                }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_transactions_response(
+                    return Ok(protocol::admin::convert_describe_transactions_response(
                         resp,
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTransactions")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Adds offsets for a consumer group to the current transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn add_offsets_to_txn(
+        &mut self,
+        txn_id: &str,
+        producer_id: i64,
+        producer_epoch: i16,
+        group_id: &str,
+    ) -> Result<AddOffsetsToTxnResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AddOffsetsToTxn"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_add_offsets_to_txn_request(
+                correlation_id,
+                &self.config.client_id,
+                txn_id,
+                producer_id,
+                producer_epoch,
+                group_id,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ADD_OFFSETS_TO_TXN,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::AddOffsetsToTxnResponse>(
+                    conn,
+                    protocol::API_VERSION_ADD_OFFSETS_TO_TXN,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_add_offsets_to_txn_response(&resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AddOffsetsToTxn")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Commits consumer offsets as part of a transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn txn_offset_commit(
+        &mut self,
+        txn_id: &str,
+        group_id: &str,
+        producer_id: i64,
+        producer_epoch: i16,
+        offsets: &[TxnOffsetCommitTopicPartition],
+    ) -> Result<TxnOffsetCommitResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "TxnOffsetCommit"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_txn_offset_commit_request(
+                correlation_id,
+                &self.config.client_id,
+                txn_id,
+                group_id,
+                producer_id,
+                producer_epoch,
+                offsets,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_TXN_OFFSET_COMMIT,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::TxnOffsetCommitResponse>(
+                    conn,
+                    protocol::API_VERSION_TXN_OFFSET_COMMIT,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_txn_offset_commit_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "TxnOffsetCommit")),
             }
         }
 
@@ -2305,7 +2836,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_consumer_group_describe_request(
+            let (header, request) = protocol::admin::build_consumer_group_describe_request(
                 correlation_id,
                 &self.config.client_id,
                 groups,
@@ -2315,17 +2846,17 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
+                protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
             )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::ConsumerGroupDescribeResponse>(
-                    conn,
-                    crate::protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
-                )
-            }) {
+                .and_then(|()| {
+                    transport::kp_get_response::<kafka_protocol::messages::ConsumerGroupDescribeResponse>(
+                        conn,
+                        protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
+                    )
+                }) {
                 Ok(resp) => {
                     return Ok(
-                        crate::protocol::admin::convert_consumer_group_describe_response(resp),
+                        protocol::admin::convert_consumer_group_describe_response(resp),
                     );
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ConsumerGroupDescribe")),
@@ -2374,7 +2905,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_share_group_describe_request(
+            let (header, request) = protocol::admin::build_share_group_describe_request(
                 correlation_id,
                 &self.config.client_id,
                 groups,
@@ -2384,16 +2915,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
+                protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::ShareGroupDescribeResponse>(
                     conn,
-                    crate::protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
+                    protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_share_group_describe_response(resp));
+                    return Ok(protocol::admin::convert_share_group_describe_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ShareGroupDescribe")),
             }
@@ -2441,34 +2972,132 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) =
-                crate::protocol::admin::build_describe_share_group_offsets_request(
-                    correlation_id,
-                    &self.config.client_id,
-                    groups,
-                );
+            let (header, request) = protocol::admin::build_describe_share_group_offsets_request(
+                correlation_id,
+                &self.config.client_id,
+                groups,
+            );
             match transport::kp_send_request(
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+                protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<
                     kafka_protocol::messages::DescribeShareGroupOffsetsResponse,
-                >(
-                    conn,
-                    crate::protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
-                )
+                >(conn, protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS)
             }) {
                 Ok(resp) => {
                     return Ok(
-                        crate::protocol::admin::convert_describe_share_group_offsets_response(resp),
+                        protocol::admin::convert_describe_share_group_offsets_response(resp),
                     );
                 }
                 Err(e) => {
                     last_err = Some(e.with_broker_context(&host, "DescribeShareGroupOffsets"));
                 }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Alters start offsets for partitions in a Kafka share group.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn alter_share_group_offsets(
+        &mut self,
+        group_id: &str,
+        topics: &[AlterShareGroupOffsetTopic],
+    ) -> Result<AlterShareGroupOffsetsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterShareGroupOffsets"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_alter_share_group_offsets_request(
+                correlation_id,
+                &self.config.client_id,
+                group_id,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::AlterShareGroupOffsetsResponse,
+                >(conn, protocol::API_VERSION_ALTER_SHARE_GROUP_OFFSETS)
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_alter_share_group_offsets_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterShareGroupOffsets")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Deletes stored offsets for topics in a Kafka share group.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn delete_share_group_offsets(
+        &mut self,
+        group_id: &str,
+        topics: &[DeleteShareGroupOffsetTopic],
+    ) -> Result<DeleteShareGroupOffsetsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DeleteShareGroupOffsets"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_delete_share_group_offsets_request(
+                correlation_id,
+                &self.config.client_id,
+                group_id,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DeleteShareGroupOffsetsResponse,
+                >(conn, protocol::API_VERSION_DELETE_SHARE_GROUP_OFFSETS)
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_delete_share_group_offsets_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteShareGroupOffsets")),
             }
         }
 
@@ -2512,7 +3141,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_list_groups_request(
+            let (header, request) = protocol::admin::build_list_groups_request(
                 correlation_id,
                 &self.config.client_id,
                 states_filter,
@@ -2522,15 +3151,15 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_LIST_GROUPS,
+                protocol::API_VERSION_LIST_GROUPS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::ListGroupsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_LIST_GROUPS,
+                    protocol::API_VERSION_LIST_GROUPS,
                 )
             }) {
-                Ok(resp) => return Ok(crate::protocol::admin::convert_list_groups_response(resp)),
+                Ok(resp) => return Ok(protocol::admin::convert_list_groups_response(resp)),
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ListGroups")),
             }
         }
@@ -2558,7 +3187,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_delete_groups_request(
+            let (header, request) = protocol::admin::build_delete_groups_request(
                 correlation_id,
                 &self.config.client_id,
                 groups,
@@ -2567,16 +3196,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DELETE_GROUPS,
+                protocol::API_VERSION_DELETE_GROUPS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DeleteGroupsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DELETE_GROUPS,
+                    protocol::API_VERSION_DELETE_GROUPS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_delete_groups_response(resp));
+                    return Ok(protocol::admin::convert_delete_groups_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteGroups")),
             }
@@ -2620,7 +3249,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_describe_groups_request(
+            let (header, request) = protocol::admin::build_describe_groups_request(
                 correlation_id,
                 &self.config.client_id,
                 groups,
@@ -2630,18 +3259,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_DESCRIBE_GROUPS,
+                protocol::API_VERSION_DESCRIBE_GROUPS,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::DescribeGroupsResponse>(
                     conn,
-                    crate::protocol::API_VERSION_DESCRIBE_GROUPS,
+                    protocol::API_VERSION_DESCRIBE_GROUPS,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_describe_groups_response(
-                        resp,
-                    ));
+                    return Ok(protocol::admin::convert_describe_groups_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeGroups")),
             }
@@ -2777,7 +3404,7 @@ impl KafkaClient {
                 }
             };
 
-            let (header, request) = crate::protocol::admin::build_offset_delete_request(
+            let (header, request) = protocol::admin::build_offset_delete_request(
                 correlation_id,
                 &self.config.client_id,
                 group,
@@ -2787,16 +3414,16 @@ impl KafkaClient {
                 conn,
                 &header,
                 &request,
-                crate::protocol::API_VERSION_OFFSET_DELETE,
+                protocol::API_VERSION_OFFSET_DELETE,
             )
             .and_then(|()| {
                 transport::kp_get_response::<kafka_protocol::messages::OffsetDeleteResponse>(
                     conn,
-                    crate::protocol::API_VERSION_OFFSET_DELETE,
+                    protocol::API_VERSION_OFFSET_DELETE,
                 )
             }) {
                 Ok(resp) => {
-                    return Ok(crate::protocol::admin::convert_offset_delete_response(resp));
+                    return Ok(protocol::admin::convert_offset_delete_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "OffsetDelete")),
             }
@@ -2961,9 +3588,7 @@ impl KafkaClient {
     /// Returns the host of the group coordinator for the given group, if known.
     #[must_use]
     pub fn group_coordinator_host(&self, group: &str) -> Option<String> {
-        self.state
-            .group_coordinator(group)
-            .map(std::borrow::ToOwned::to_owned)
+        self.state.group_coordinator(group).map(ToOwned::to_owned)
     }
 
     /// Gets the next correlation ID for request tracking.
@@ -3023,10 +3648,9 @@ mod tests {
     }
 
     #[test]
-    fn admin_mutation_apis_surface_no_host_without_bootstrap_brokers() {
+    #[allow(deprecated)]
+    fn config_and_storage_mutation_apis_surface_no_host() {
         let mut client = KafkaClient::new(vec![]);
-        let topic_partitions = [TopicPartitionFilter::new("topic-a", [0, 1])];
-
         assert_no_host(
             client.incremental_alter_configs(
                 &IncrementalAlterConfigsOptions::new([IncrementalAlterConfigsResource::topic(
@@ -3036,6 +3660,26 @@ mod tests {
                 .with_validate_only(true),
             ),
         );
+        assert_no_host(
+            client.alter_configs(
+                &AlterConfigsOptions::new([AlterConfigsResource::topic(
+                    "topic-a",
+                    [AlterConfigsEntry::new("retention.ms", "60000")],
+                )])
+                .with_validate_only(true),
+            ),
+        );
+        assert_no_host(client.alter_replica_log_dirs(&[AlterReplicaLogDir::new(
+            "/kafka-logs-2",
+            vec![AlterReplicaLogDirTopic::new("topic-a", [0, 1])],
+        )]));
+    }
+
+    #[test]
+    fn partition_and_quota_mutation_apis_surface_no_host() {
+        let mut client = KafkaClient::new(vec![]);
+        let topic_partitions = [TopicPartitionFilter::new("topic-a", [0, 1])];
+
         assert_no_host(client.create_partitions(&[CreatePartitionsTopicSpec::new("topic-a", 3)]));
         assert_no_host(client.delete_records(
             &[DeleteRecordsTopicSpec::new(
@@ -3066,6 +3710,70 @@ mod tests {
                 .with_validate_only(true),
             ),
         );
+        assert_no_host(client.add_offsets_to_txn("txn-a", 42, 3, "group-a"));
+    }
+
+    #[test]
+    fn transaction_and_security_mutation_apis_surface_no_host() {
+        let mut client = KafkaClient::new(vec![]);
+
+        assert_no_host(client.txn_offset_commit(
+            "txn-b",
+            "group-b",
+            43,
+            4,
+            &[TxnOffsetCommitTopicPartition {
+                topic: "topic-a".to_owned(),
+                partition: 0,
+                offset: 10,
+                leader_epoch: None,
+                metadata: None,
+            }],
+        ));
+        assert_no_host(
+            client.create_delegation_token(
+                &CreateDelegationTokenOptions::new()
+                    .with_renewer(KafkaPrincipal::user("bob"))
+                    .with_max_lifetime_ms(60_000),
+            ),
+        );
+        assert_no_host(client.renew_delegation_token(b"hmac", Duration::from_secs(3600)));
+        assert_no_host(client.expire_delegation_token(b"hmac", Duration::from_secs(60)));
+        assert_no_host(
+            client.alter_user_scram_credentials(
+                &AlterUserScramCredentialsOptions::new()
+                    .with_deletion(ScramCredentialDeletion::new(
+                        "old-user",
+                        SCRAM_MECHANISM_SHA_256,
+                    ))
+                    .with_upsertion(ScramCredentialUpsertion::new(
+                        "new-user",
+                        SCRAM_MECHANISM_SHA_512,
+                        4096,
+                        bytes::Bytes::from_static(b"salt"),
+                        bytes::Bytes::from_static(b"salted-password"),
+                    )),
+            ),
+        );
+    }
+
+    #[test]
+    fn feature_and_share_mutation_apis_surface_no_host() {
+        let mut client = KafkaClient::new(vec![]);
+
+        assert_no_host(client.update_features(&[FeatureUpdate::upgrade("kraft.version", 3)], true));
+        assert_no_host(client.unregister_broker(42));
+        assert_no_host(client.alter_share_group_offsets(
+            "my-group",
+            &[AlterShareGroupOffsetTopic::new(
+                "topic-a",
+                [AlterShareGroupOffsetPartition::new(0, 42)],
+            )],
+        ));
+        assert_no_host(client.delete_share_group_offsets(
+            "my-group",
+            &[DeleteShareGroupOffsetTopic::new("topic-a")],
+        ));
     }
 
     #[test]
@@ -3085,6 +3793,16 @@ mod tests {
         ));
         assert!(matches!(
             client.elect_unclean_leaders(&[TopicPartitionFilter::new("topic-a", [0])], too_large),
+            Err(Error::Protocol(ProtocolError::InvalidDuration))
+        ));
+
+        let too_large_i64 = Duration::from_secs((i64::MAX as u64 / 1_000) + 1);
+        assert!(matches!(
+            client.renew_delegation_token(b"hmac", too_large_i64),
+            Err(Error::Protocol(ProtocolError::InvalidDuration))
+        ));
+        assert!(matches!(
+            client.expire_delegation_token(b"hmac", too_large_i64),
             Err(Error::Protocol(ProtocolError::InvalidDuration))
         ));
     }
