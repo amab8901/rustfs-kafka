@@ -131,10 +131,12 @@ tx.commit().unwrap();
 ```rust,no_run
 use std::time::Duration;
 use rustfs_kafka::client::{
-    AclBinding, AlterPartitionReassignmentsOptions, ClientQuotaEntityFilter, ConfigResource,
-    CreatePartitionsOptions, CreatePartitionsTopicSpec, DeleteRecordsPartitionSpec,
+    AclBinding, AlterClientQuotasOptions, AlterPartitionReassignmentsOptions,
+    ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntityFilter, ClientQuotaEntitySpec,
+    ConfigResource, CreatePartitionsOptions, CreatePartitionsTopicSpec, DeleteRecordsPartitionSpec,
     DeleteRecordsTopicSpec, DescribeAclsFilter, DescribeClientQuotasOptions,
-    DescribeTopicPartitionsOptions, KafkaClient, KafkaPrincipal, LeaderEpochPartitionRequest,
+    DescribeTopicPartitionsOptions, IncrementalAlterConfig, IncrementalAlterConfigsOptions,
+    IncrementalAlterConfigsResource, KafkaClient, KafkaPrincipal, LeaderEpochPartitionRequest,
     LeaderEpochTopicRequest, ListTransactionsOptions, PartitionReassignmentSpec,
     PartitionReassignmentTopicSpec,
     ShareGroupOffsetRequest, TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ,
@@ -254,6 +256,19 @@ for resource in configs.results {
     println!("resource={} configs={}", resource.resource_name, resource.configs.len());
 }
 
+let altered_configs = client
+    .incremental_alter_configs(
+        &IncrementalAlterConfigsOptions::new([
+            IncrementalAlterConfigsResource::topic(
+                "my-topic",
+                [IncrementalAlterConfig::set("retention.ms", "60000")],
+            ),
+        ])
+        .with_validate_only(true),
+    )
+    .unwrap();
+println!("altered_config_resources={}", altered_configs.responses.len());
+
 let config_resources = client
     .list_config_resources_for(&[CONFIG_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER])
     .unwrap();
@@ -363,6 +378,20 @@ for entry in quotas.entries.unwrap_or_default() {
     println!("quota_entity_parts={} values={}", entry.entity.len(), entry.values.len());
 }
 
+let altered_quotas = client
+    .alter_client_quotas(
+        &AlterClientQuotasOptions::new([ClientQuotaAlteration::new(
+            [
+                ClientQuotaEntitySpec::named("user", "alice"),
+                ClientQuotaEntitySpec::default_entity("client-id"),
+            ],
+            [ClientQuotaAlterationOp::set("producer_byte_rate", 1024.5)],
+        )])
+        .with_validate_only(true),
+    )
+    .unwrap();
+println!("altered_quota_entries={}", altered_quotas.entries.len());
+
 let scram_credentials = client
     .describe_user_scram_credentials_for(&["alice"])
     .unwrap();
@@ -423,6 +452,7 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `create_acls(bindings)`
 - `delete_acls(filters)`
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
+- `incremental_alter_configs(options)`
 - `list_config_resources_for(resource_types)`
 - `describe_delegation_tokens_for(owners)`
 - `create_partitions_with_options(options)`
@@ -437,6 +467,7 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_quorum(topic_partition_filters)`
 - `offsets_for_leader_epochs(topics)`
 - `describe_client_quotas_with_options(options)`
+- `alter_client_quotas(options)`
 - `describe_user_scram_credentials_for(users)`
 - `list_transactions_with_options(options)`
 

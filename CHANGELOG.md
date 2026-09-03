@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `create_acls`
   - `delete_acls`
   - `describe_configs` / `describe_configs_with_options`
+  - `incremental_alter_configs`
   - `list_config_resources` / `list_config_resources_for`
   - `describe_delegation_tokens` / `describe_delegation_tokens_for`
   - `describe_log_dirs` / `describe_log_dirs_for`
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `list_partition_reassignments` / `list_partition_reassignments_for`
   - `offsets_for_leader_epochs`
   - `describe_client_quotas` / `describe_client_quotas_with_options`
+  - `alter_client_quotas`
   - `describe_user_scram_credentials` / `describe_user_scram_credentials_for`
   - `describe_producers`
   - `list_transactions` / `list_transactions_with_options`
@@ -41,9 +43,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `delete_group_offsets`
 - Added public response data types for broker API versions, cluster brokers, config resources/entries, config resource
   discovery, listed groups, deleted groups, described groups, described group members, ACL resources, ACL mutation
-  results, delegation tokens, log directory diagnostics, KRaft quorum state, topic partition discovery, partition
-  reassignments, partition reassignment mutations, partition expansion, record deletion, leader election,
-  leader-epoch offset lookup, client quotas, SCRAM credential metadata, active producers, transactions,
+  results, config mutation results, delegation tokens, log directory diagnostics, KRaft quorum state, topic partition
+  discovery, partition reassignments, partition reassignment mutations, partition expansion, record deletion,
+  leader election, leader-epoch offset lookup, client quotas, client quota mutation results, SCRAM credential metadata,
+  active producers, transactions,
   committed-offset deletion results, modern consumer group descriptions, share group descriptions, and share group offsets.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 - Added `docs/protocol-coverage.md` to track `kafka-protocol` `0.18.0` API coverage and prioritize remaining

@@ -61,12 +61,15 @@ pub use crate::protocol::admin::{
     ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
     ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclBinding, AclDescription,
-    AclResource, ActiveProducer, AlterPartitionReassignmentsOptions,
+    AclResource, ActiveProducer, AlterClientQuotaEntryResult, AlterClientQuotasOptions,
+    AlterClientQuotasResponseData, AlterPartitionReassignmentsOptions,
     AlterPartitionReassignmentsPartitionResult, AlterPartitionReassignmentsResponseData,
     AlterPartitionReassignmentsTopicResult, CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
-    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, CONFIG_RESOURCE_TYPE_BROKER,
-    CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaEntity,
-    ClientQuotaEntityFilter, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
+    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, CONFIG_OPERATION_APPEND,
+    CONFIG_OPERATION_DELETE, CONFIG_OPERATION_SET, CONFIG_OPERATION_SUBTRACT,
+    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC,
+    ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter,
+    ClientQuotaEntitySpec, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
     ConfigResource, ConfigSynonym, ConsumerGroupAssignment, ConsumerGroupDescribeResponseData,
     ConsumerGroupDescription, ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions,
     CreateAclResult, CreateAclsResponseData, CreatePartitionsOptions, CreatePartitionsResponseData,
@@ -83,7 +86,9 @@ pub use crate::protocol::admin::{
     DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
     DescribedTopicPartition, DescribedTopicPartitionsTopic, DescribedTransaction,
     ELECTION_TYPE_PREFERRED, ELECTION_TYPE_UNCLEAN, ElectLeadersOptions,
-    ElectLeadersPartitionResult, ElectLeadersResponseData, ElectLeadersTopicResult, KafkaPrincipal,
+    ElectLeadersPartitionResult, ElectLeadersResponseData, ElectLeadersTopicResult,
+    IncrementalAlterConfig, IncrementalAlterConfigsOptions, IncrementalAlterConfigsResource,
+    IncrementalAlterConfigsResourceResult, IncrementalAlterConfigsResponseData, KafkaPrincipal,
     LeaderEpochPartitionOffset, LeaderEpochPartitionRequest, LeaderEpochTopicOffsets,
     LeaderEpochTopicRequest, ListConfigResourcesResponseData, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
@@ -1126,6 +1131,59 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Applies incremental config changes to Kafka topic, broker, or broker logger resources.
+    ///
+    /// Prefer this API over Kafka's legacy whole-resource `AlterConfigs` protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn incremental_alter_configs(
+        &mut self,
+        options: &IncrementalAlterConfigsOptions,
+    ) -> Result<IncrementalAlterConfigsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "IncrementalAlterConfigs"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_incremental_alter_configs_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::IncrementalAlterConfigsResponse,
+                >(conn, crate::protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS)
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_incremental_alter_configs_response(resp),
+                    );
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "IncrementalAlterConfigs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Describes all delegation tokens visible to the contacted broker.
     ///
     /// # Errors
@@ -1857,6 +1915,56 @@ impl KafkaClient {
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeClientQuotas")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Applies client quota changes for one or more quota entities.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn alter_client_quotas(
+        &mut self,
+        options: &AlterClientQuotasOptions,
+    ) -> Result<AlterClientQuotasResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterClientQuotas"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_alter_client_quotas_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::AlterClientQuotasResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_alter_client_quotas_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterClientQuotas")),
             }
         }
 

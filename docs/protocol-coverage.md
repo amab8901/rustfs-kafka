@@ -15,9 +15,9 @@ Source checked:
 ## Coverage Summary
 
 - Total `kafka-protocol` API keys: 87.
-- Public or high-level runtime coverage: 38 APIs.
+- Public or high-level runtime coverage: 40 APIs.
 - Internal runtime coverage without direct public API: 10 APIs.
-- Client-facing backlog: 10 APIs.
+- Client-facing backlog: 8 APIs.
 - Advanced runtime backlog: 10 APIs.
 - Broker/controller/internal backlog: 19 APIs.
 
@@ -65,12 +65,12 @@ Source checked:
 | 41 | DescribeDelegationToken | Public admin implemented | Done. |
 | 42 | DeleteGroups | Public admin implemented | Done. |
 | 43 | ElectLeaders | Public admin implemented | Done. |
-| 44 | IncrementalAlterConfigs | Missing client-facing admin API | Add preferred config mutation helper. |
+| 44 | IncrementalAlterConfigs | Public admin implemented | Done. |
 | 45 | AlterPartitionReassignments | Public admin implemented | Done. |
 | 46 | ListPartitionReassignments | Public admin implemented | Done. |
 | 47 | OffsetDelete | Public admin implemented | Done. |
 | 48 | DescribeClientQuotas | Public admin implemented | Done. |
-| 49 | AlterClientQuotas | Missing client-facing admin API | Add public client quota mutation helper. |
+| 49 | AlterClientQuotas | Public admin implemented | Done. |
 | 50 | DescribeUserScramCredentials | Public admin implemented | Done. |
 | 51 | AlterUserScramCredentials | Missing client-facing security API | Add public SCRAM credential mutation helper with careful docs. |
 | 52 | Vote | Missing quorum-internal API | Do not expose as normal client API. |
@@ -115,10 +115,10 @@ Source checked:
 
 ## Recommended Implementation Batches
 
-1. Config and quota mutation: `IncrementalAlterConfigs`, `AlterClientQuotas`, possibly legacy `AlterConfigs`.
-2. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
-3. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
-4. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
-5. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
-6. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
+1. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
+2. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
+3. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
+4. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
+5. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
    `RemoveRaftVoter`, `UpdateRaftVoter`, `UnregisterBroker`.
+6. Legacy compatibility only: `AlterConfigs` whole-resource config replacement.

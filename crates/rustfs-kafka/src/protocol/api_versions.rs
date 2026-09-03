@@ -8,15 +8,16 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_CONSUMER_GROUP_DESCRIBE,
-    API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
-    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DESCRIBE_ACLS,
-    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
-    API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
-    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
-    API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
-    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-    API_VERSION_ELECT_LEADERS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
+    API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS,
+    API_VERSION_DELETE_ACLS, API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS,
+    API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
+    API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+    API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
+    API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+    API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
+    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_ELECT_LEADERS, API_VERSION_FETCH,
+    API_VERSION_FIND_COORDINATOR, API_VERSION_INCREMENTAL_ALTER_CONFIGS,
     API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
     API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA,
     API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH,
@@ -50,10 +51,12 @@ pub mod api_key {
     pub const DESCRIBE_DELEGATION_TOKEN: i16 = 41;
     pub const DELETE_GROUPS: i16 = 42;
     pub const ELECT_LEADERS: i16 = 43;
+    pub const INCREMENTAL_ALTER_CONFIGS: i16 = 44;
     pub const ALTER_PARTITION_REASSIGNMENTS: i16 = 45;
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
     pub const OFFSET_DELETE: i16 = 47;
     pub const DESCRIBE_CLIENT_QUOTAS: i16 = 48;
+    pub const ALTER_CLIENT_QUOTAS: i16 = 49;
     pub const DESCRIBE_USER_SCRAM_CREDENTIALS: i16 = 50;
     pub const DESCRIBE_QUORUM: i16 = 55;
     pub const DESCRIBE_CLUSTER: i16 = 60;
@@ -337,6 +340,7 @@ impl ApiVersionCache {
             api_key::CREATE_ACLS => API_VERSION_CREATE_ACLS,
             api_key::DELETE_ACLS => API_VERSION_DELETE_ACLS,
             api_key::DESCRIBE_CONFIGS => API_VERSION_DESCRIBE_CONFIGS,
+            api_key::INCREMENTAL_ALTER_CONFIGS => API_VERSION_INCREMENTAL_ALTER_CONFIGS,
             api_key::DESCRIBE_LOG_DIRS => API_VERSION_DESCRIBE_LOG_DIRS,
             api_key::CREATE_PARTITIONS => API_VERSION_CREATE_PARTITIONS,
             api_key::DESCRIBE_DELEGATION_TOKEN => API_VERSION_DESCRIBE_DELEGATION_TOKEN,
@@ -346,6 +350,7 @@ impl ApiVersionCache {
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             api_key::OFFSET_DELETE => API_VERSION_OFFSET_DELETE,
             api_key::DESCRIBE_CLIENT_QUOTAS => API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            api_key::ALTER_CLIENT_QUOTAS => API_VERSION_ALTER_CLIENT_QUOTAS,
             api_key::DESCRIBE_USER_SCRAM_CREDENTIALS => API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             api_key::DESCRIBE_QUORUM => API_VERSION_DESCRIBE_QUORUM,
             api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
@@ -404,6 +409,10 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
         create_acls: version!(CREATE_ACLS, API_VERSION_CREATE_ACLS),
         delete_acls: version!(DELETE_ACLS, API_VERSION_DELETE_ACLS),
         describe_configs: version!(DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
+        incremental_alter_configs: version!(
+            INCREMENTAL_ALTER_CONFIGS,
+            API_VERSION_INCREMENTAL_ALTER_CONFIGS
+        ),
         describe_log_dirs: version!(DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
         create_partitions: version!(CREATE_PARTITIONS, API_VERSION_CREATE_PARTITIONS),
         describe_delegation_token: version!(
@@ -425,6 +434,7 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             DESCRIBE_CLIENT_QUOTAS,
             API_VERSION_DESCRIBE_CLIENT_QUOTAS
         ),
+        alter_client_quotas: version!(ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_CLIENT_QUOTAS),
         describe_user_scram_credentials: version!(
             DESCRIBE_USER_SCRAM_CREDENTIALS,
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
@@ -470,6 +480,7 @@ pub struct ApiVersions {
     pub create_acls: i16,
     pub delete_acls: i16,
     pub describe_configs: i16,
+    pub incremental_alter_configs: i16,
     pub describe_log_dirs: i16,
     pub create_partitions: i16,
     pub describe_delegation_token: i16,
@@ -479,6 +490,7 @@ pub struct ApiVersions {
     pub list_partition_reassignments: i16,
     pub offset_delete: i16,
     pub describe_client_quotas: i16,
+    pub alter_client_quotas: i16,
     pub describe_user_scram_credentials: i16,
     pub describe_quorum: i16,
     pub describe_cluster: i16,
@@ -510,6 +522,7 @@ impl Default for ApiVersions {
             create_acls: API_VERSION_CREATE_ACLS,
             delete_acls: API_VERSION_DELETE_ACLS,
             describe_configs: API_VERSION_DESCRIBE_CONFIGS,
+            incremental_alter_configs: API_VERSION_INCREMENTAL_ALTER_CONFIGS,
             describe_log_dirs: API_VERSION_DESCRIBE_LOG_DIRS,
             create_partitions: API_VERSION_CREATE_PARTITIONS,
             describe_delegation_token: API_VERSION_DESCRIBE_DELEGATION_TOKEN,
@@ -519,6 +532,7 @@ impl Default for ApiVersions {
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             offset_delete: API_VERSION_OFFSET_DELETE,
             describe_client_quotas: API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            alter_client_quotas: API_VERSION_ALTER_CLIENT_QUOTAS,
             describe_user_scram_credentials: API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             describe_quorum: API_VERSION_DESCRIBE_QUORUM,
             describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
@@ -677,6 +691,10 @@ mod tests {
         assert_eq!(v.create_acls, API_VERSION_CREATE_ACLS);
         assert_eq!(v.delete_acls, API_VERSION_DELETE_ACLS);
         assert_eq!(v.describe_configs, API_VERSION_DESCRIBE_CONFIGS);
+        assert_eq!(
+            v.incremental_alter_configs,
+            API_VERSION_INCREMENTAL_ALTER_CONFIGS
+        );
         assert_eq!(v.describe_log_dirs, API_VERSION_DESCRIBE_LOG_DIRS);
         assert_eq!(v.create_partitions, API_VERSION_CREATE_PARTITIONS);
         assert_eq!(
@@ -695,6 +713,7 @@ mod tests {
         );
         assert_eq!(v.offset_delete, API_VERSION_OFFSET_DELETE);
         assert_eq!(v.describe_client_quotas, API_VERSION_DESCRIBE_CLIENT_QUOTAS);
+        assert_eq!(v.alter_client_quotas, API_VERSION_ALTER_CLIENT_QUOTAS);
         assert_eq!(
             v.describe_user_scram_credentials,
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
@@ -740,6 +759,7 @@ mod tests {
         assert_eq!(v.create_acls, d.create_acls);
         assert_eq!(v.delete_acls, d.delete_acls);
         assert_eq!(v.describe_configs, d.describe_configs);
+        assert_eq!(v.incremental_alter_configs, d.incremental_alter_configs);
         assert_eq!(v.describe_log_dirs, d.describe_log_dirs);
         assert_eq!(v.create_partitions, d.create_partitions);
         assert_eq!(v.describe_delegation_token, d.describe_delegation_token);
@@ -755,6 +775,7 @@ mod tests {
         );
         assert_eq!(v.offset_delete, d.offset_delete);
         assert_eq!(v.describe_client_quotas, d.describe_client_quotas);
+        assert_eq!(v.alter_client_quotas, d.alter_client_quotas);
         assert_eq!(
             v.describe_user_scram_credentials,
             d.describe_user_scram_credentials
@@ -795,6 +816,10 @@ mod tests {
             (api_key::CREATE_ACLS, API_VERSION_CREATE_ACLS),
             (api_key::DELETE_ACLS, API_VERSION_DELETE_ACLS),
             (api_key::DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
+            (
+                api_key::INCREMENTAL_ALTER_CONFIGS,
+                API_VERSION_INCREMENTAL_ALTER_CONFIGS,
+            ),
             (api_key::DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
             (api_key::CREATE_PARTITIONS, API_VERSION_CREATE_PARTITIONS),
             (
@@ -815,6 +840,10 @@ mod tests {
             (
                 api_key::DESCRIBE_CLIENT_QUOTAS,
                 API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            ),
+            (
+                api_key::ALTER_CLIENT_QUOTAS,
+                API_VERSION_ALTER_CLIENT_QUOTAS,
             ),
             (
                 api_key::DESCRIBE_USER_SCRAM_CREDENTIALS,

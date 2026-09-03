@@ -2,21 +2,22 @@
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    AlterPartitionReassignmentsRequest, AlterPartitionReassignmentsResponse, ApiKey,
-    ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse, CreateAclsRequest,
-    CreateAclsResponse, CreatePartitionsRequest, CreatePartitionsResponse, DeleteAclsRequest,
-    DeleteAclsResponse, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
-    DeleteRecordsResponse, DescribeAclsRequest, DescribeAclsResponse, DescribeClientQuotasRequest,
-    DescribeClientQuotasResponse, DescribeClusterRequest, DescribeClusterResponse,
-    DescribeConfigsRequest, DescribeConfigsResponse, DescribeDelegationTokenRequest,
-    DescribeDelegationTokenResponse, DescribeGroupsRequest, DescribeGroupsResponse,
-    DescribeLogDirsRequest, DescribeLogDirsResponse, DescribeProducersRequest,
-    DescribeProducersResponse, DescribeQuorumRequest, DescribeQuorumResponse,
-    DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
+    AlterClientQuotasRequest, AlterClientQuotasResponse, AlterPartitionReassignmentsRequest,
+    AlterPartitionReassignmentsResponse, ApiKey, ConsumerGroupDescribeRequest,
+    ConsumerGroupDescribeResponse, CreateAclsRequest, CreateAclsResponse, CreatePartitionsRequest,
+    CreatePartitionsResponse, DeleteAclsRequest, DeleteAclsResponse, DeleteGroupsRequest,
+    DeleteGroupsResponse, DeleteRecordsRequest, DeleteRecordsResponse, DescribeAclsRequest,
+    DescribeAclsResponse, DescribeClientQuotasRequest, DescribeClientQuotasResponse,
+    DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
+    DescribeConfigsResponse, DescribeDelegationTokenRequest, DescribeDelegationTokenResponse,
+    DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
+    DescribeProducersRequest, DescribeProducersResponse, DescribeQuorumRequest,
+    DescribeQuorumResponse, DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
     DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse, DescribeTransactionsRequest,
     DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
     DescribeUserScramCredentialsResponse, ElectLeadersRequest, ElectLeadersResponse, GroupId,
-    ListConfigResourcesRequest, ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
+    IncrementalAlterConfigsRequest, IncrementalAlterConfigsResponse, ListConfigResourcesRequest,
+    ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
     ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
     ListTransactionsResponse, OffsetDeleteRequest, OffsetDeleteResponse,
     OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, RequestHeader,
@@ -25,17 +26,18 @@ use kafka_protocol::messages::{
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
-    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_CONSUMER_GROUP_DESCRIBE,
-    API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
-    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DESCRIBE_ACLS,
-    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
-    API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
-    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
-    API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
-    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-    API_VERSION_ELECT_LEADERS, API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
-    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
-    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+    API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS,
+    API_VERSION_DELETE_ACLS, API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS,
+    API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
+    API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+    API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
+    API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+    API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
+    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_ELECT_LEADERS,
+    API_VERSION_INCREMENTAL_ALTER_CONFIGS, API_VERSION_LIST_CONFIG_RESOURCES,
+    API_VERSION_LIST_GROUPS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+    API_VERSION_LIST_TRANSACTIONS, API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
     API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 
@@ -48,6 +50,15 @@ pub const CONFIG_RESOURCE_TYPE_TOPIC: i8 = 2;
 pub const CONFIG_RESOURCE_TYPE_BROKER: i8 = 4;
 /// Broker logger config resource type for `DescribeConfigs`.
 pub const CONFIG_RESOURCE_TYPE_BROKER_LOGGER: i8 = 8;
+
+/// Set a config key to a value in `IncrementalAlterConfigs`.
+pub const CONFIG_OPERATION_SET: i8 = 0;
+/// Delete a config key in `IncrementalAlterConfigs`.
+pub const CONFIG_OPERATION_DELETE: i8 = 1;
+/// Append a value to a list config in `IncrementalAlterConfigs`.
+pub const CONFIG_OPERATION_APPEND: i8 = 2;
+/// Subtract a value from a list config in `IncrementalAlterConfigs`.
+pub const CONFIG_OPERATION_SUBTRACT: i8 = 3;
 
 /// Preferred replica leader election.
 pub const ELECTION_TYPE_PREFERRED: i8 = 0;
@@ -176,6 +187,158 @@ impl ConfigResource {
         self.configuration_keys = Some(keys.into_iter().map(Into::into).collect());
         self
     }
+}
+
+/// One config operation for `IncrementalAlterConfigs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncrementalAlterConfig {
+    /// Configuration key name.
+    pub name: String,
+    /// Raw Kafka config operation code.
+    pub operation: i8,
+    /// Value used by set/append/subtract operations, or `None` for delete.
+    pub value: Option<String>,
+}
+
+impl IncrementalAlterConfig {
+    /// Create a config operation with a raw Kafka operation code.
+    #[must_use]
+    pub fn new(name: impl Into<String>, operation: i8, value: Option<String>) -> Self {
+        Self {
+            name: name.into(),
+            operation,
+            value,
+        }
+    }
+
+    /// Set a config key to a value.
+    #[must_use]
+    pub fn set(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self::new(name, CONFIG_OPERATION_SET, Some(value.into()))
+    }
+
+    /// Delete a config key.
+    #[must_use]
+    pub fn delete(name: impl Into<String>) -> Self {
+        Self::new(name, CONFIG_OPERATION_DELETE, None)
+    }
+
+    /// Append a value to a list config key.
+    #[must_use]
+    pub fn append(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self::new(name, CONFIG_OPERATION_APPEND, Some(value.into()))
+    }
+
+    /// Subtract a value from a list config key.
+    #[must_use]
+    pub fn subtract(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self::new(name, CONFIG_OPERATION_SUBTRACT, Some(value.into()))
+    }
+}
+
+/// One resource updated by `IncrementalAlterConfigs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncrementalAlterConfigsResource {
+    /// Kafka config resource type.
+    pub resource_type: i8,
+    /// Resource name, such as a topic name or broker ID.
+    pub resource_name: String,
+    /// Config operations for this resource.
+    pub configs: Vec<IncrementalAlterConfig>,
+}
+
+impl IncrementalAlterConfigsResource {
+    /// Create a config mutation resource with a raw Kafka resource type.
+    #[must_use]
+    pub fn new<I>(resource_type: i8, resource_name: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = IncrementalAlterConfig>,
+    {
+        Self {
+            resource_type,
+            resource_name: resource_name.into(),
+            configs: configs.into_iter().collect(),
+        }
+    }
+
+    /// Create a topic config mutation resource.
+    #[must_use]
+    pub fn topic<I>(name: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = IncrementalAlterConfig>,
+    {
+        Self::new(CONFIG_RESOURCE_TYPE_TOPIC, name, configs)
+    }
+
+    /// Create a broker config mutation resource.
+    #[must_use]
+    pub fn broker<I>(id: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = IncrementalAlterConfig>,
+    {
+        Self::new(CONFIG_RESOURCE_TYPE_BROKER, id, configs)
+    }
+
+    /// Create a broker logger config mutation resource.
+    #[must_use]
+    pub fn broker_logger<I>(id: impl Into<String>, configs: I) -> Self
+    where
+        I: IntoIterator<Item = IncrementalAlterConfig>,
+    {
+        Self::new(CONFIG_RESOURCE_TYPE_BROKER_LOGGER, id, configs)
+    }
+}
+
+/// Options for an `IncrementalAlterConfigs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncrementalAlterConfigsOptions {
+    /// Resources to mutate.
+    pub resources: Vec<IncrementalAlterConfigsResource>,
+    /// Validate the request without applying it.
+    pub validate_only: bool,
+}
+
+impl IncrementalAlterConfigsOptions {
+    /// Create options with the supplied resources.
+    #[must_use]
+    pub fn new<I>(resources: I) -> Self
+    where
+        I: IntoIterator<Item = IncrementalAlterConfigsResource>,
+    {
+        Self {
+            resources: resources.into_iter().collect(),
+            validate_only: false,
+        }
+    }
+
+    /// Validate the request without applying it.
+    #[must_use]
+    pub fn with_validate_only(mut self, validate_only: bool) -> Self {
+        self.validate_only = validate_only;
+        self
+    }
+}
+
+/// Per-resource result returned by `IncrementalAlterConfigs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncrementalAlterConfigsResourceResult {
+    /// Per-resource broker error code.
+    pub error_code: i16,
+    /// Optional per-resource broker error message.
+    pub error_message: Option<String>,
+    /// Kafka config resource type.
+    pub resource_type: i8,
+    /// Resource name.
+    pub resource_name: String,
+}
+
+/// Parsed response from an `IncrementalAlterConfigs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncrementalAlterConfigsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-resource config mutation results.
+    pub responses: Vec<IncrementalAlterConfigsResourceResult>,
 }
 
 /// A topic plus a partition list used by read-only diagnostic APIs.
@@ -1135,6 +1298,122 @@ impl DescribeClientQuotasOptions {
     }
 }
 
+/// One entity component used to alter client quotas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientQuotaEntitySpec {
+    /// Kafka quota entity type, for example `user`, `client-id`, or `ip`.
+    pub entity_type: String,
+    /// Entity name, or `None` for Kafka's default entity.
+    pub entity_name: Option<String>,
+}
+
+impl ClientQuotaEntitySpec {
+    /// Create a quota entity with a concrete entity name.
+    #[must_use]
+    pub fn named(entity_type: impl Into<String>, entity_name: impl Into<String>) -> Self {
+        Self {
+            entity_type: entity_type.into(),
+            entity_name: Some(entity_name.into()),
+        }
+    }
+
+    /// Create a quota entity that targets Kafka's default entity for this type.
+    #[must_use]
+    pub fn default_entity(entity_type: impl Into<String>) -> Self {
+        Self {
+            entity_type: entity_type.into(),
+            entity_name: None,
+        }
+    }
+}
+
+/// One quota operation for `AlterClientQuotas`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientQuotaAlterationOp {
+    /// Quota configuration key.
+    pub key: String,
+    /// Value to set; ignored by Kafka when `remove` is true.
+    pub value: f64,
+    /// Whether the quota key should be removed.
+    pub remove: bool,
+}
+
+impl ClientQuotaAlterationOp {
+    /// Set a quota value.
+    #[must_use]
+    pub fn set(key: impl Into<String>, value: f64) -> Self {
+        Self {
+            key: key.into(),
+            value,
+            remove: false,
+        }
+    }
+
+    /// Remove a quota value.
+    #[must_use]
+    pub fn remove(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            value: 0.0,
+            remove: true,
+        }
+    }
+}
+
+/// One quota entity alteration entry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientQuotaAlteration {
+    /// Entity components that identify this quota entry.
+    pub entity: Vec<ClientQuotaEntitySpec>,
+    /// Quota operations to apply to this entity.
+    pub ops: Vec<ClientQuotaAlterationOp>,
+}
+
+impl ClientQuotaAlteration {
+    /// Create a quota alteration for an entity.
+    #[must_use]
+    pub fn new<I, J>(entity: I, ops: J) -> Self
+    where
+        I: IntoIterator<Item = ClientQuotaEntitySpec>,
+        J: IntoIterator<Item = ClientQuotaAlterationOp>,
+    {
+        Self {
+            entity: entity.into_iter().collect(),
+            ops: ops.into_iter().collect(),
+        }
+    }
+}
+
+/// Options for an `AlterClientQuotas` request.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlterClientQuotasOptions {
+    /// Quota entries to alter.
+    pub entries: Vec<ClientQuotaAlteration>,
+    /// Validate the request without applying it.
+    pub validate_only: bool,
+}
+
+impl AlterClientQuotasOptions {
+    /// Create options with the supplied quota alterations.
+    #[must_use]
+    pub fn new<I>(entries: I) -> Self
+    where
+        I: IntoIterator<Item = ClientQuotaAlteration>,
+    {
+        Self {
+            entries: entries.into_iter().collect(),
+            validate_only: false,
+        }
+    }
+
+    /// Validate the request without applying it.
+    #[must_use]
+    pub fn with_validate_only(mut self, validate_only: bool) -> Self {
+        self.validate_only = validate_only;
+        self
+    }
+}
+
 /// Filters for a `ListTransactions` request.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ListTransactionsOptions {
@@ -1853,6 +2132,26 @@ pub struct DescribeClientQuotasResponseData {
     pub entries: Option<Vec<ClientQuotaEntry>>,
 }
 
+/// One quota entity result returned by `AlterClientQuotas`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterClientQuotaEntryResult {
+    /// Per-entry broker error code.
+    pub error_code: i16,
+    /// Optional per-entry broker error message.
+    pub error_message: Option<String>,
+    /// Entity components that identify this quota entry.
+    pub entity: Vec<ClientQuotaEntity>,
+}
+
+/// Parsed response from an `AlterClientQuotas` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterClientQuotasResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-entity quota alteration results returned by the broker.
+    pub entries: Vec<AlterClientQuotaEntryResult>,
+}
+
 /// One SCRAM mechanism configured for a user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScramCredentialInfo {
@@ -2229,6 +2528,55 @@ pub fn build_describe_configs_request(
         .with_resources(resources)
         .with_include_synonyms(include_synonyms)
         .with_include_documentation(include_documentation);
+
+    (header, request)
+}
+
+/// Build an `IncrementalAlterConfigs` request.
+pub fn build_incremental_alter_configs_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &IncrementalAlterConfigsOptions,
+) -> (RequestHeader, IncrementalAlterConfigsRequest) {
+    use kafka_protocol::messages::incremental_alter_configs_request::{
+        AlterConfigsResource, AlterableConfig,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::IncrementalAlterConfigs,
+        API_VERSION_INCREMENTAL_ALTER_CONFIGS,
+    );
+    let resources = options
+        .resources
+        .iter()
+        .map(|resource| {
+            AlterConfigsResource::default()
+                .with_resource_type(resource.resource_type)
+                .with_resource_name(StrBytes::from_string(resource.resource_name.clone()))
+                .with_configs(
+                    resource
+                        .configs
+                        .iter()
+                        .map(|config| {
+                            AlterableConfig::default()
+                                .with_name(StrBytes::from_string(config.name.clone()))
+                                .with_config_operation(config.operation)
+                                .with_value(
+                                    config
+                                        .value
+                                        .as_ref()
+                                        .map(|value| StrBytes::from_string(value.clone())),
+                                )
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = IncrementalAlterConfigsRequest::default()
+        .with_resources(resources)
+        .with_validate_only(options.validate_only);
 
     (header, request)
 }
@@ -2701,6 +3049,62 @@ pub fn build_describe_client_quotas_request(
     (header, request)
 }
 
+/// Build an `AlterClientQuotas` request.
+pub fn build_alter_client_quotas_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &AlterClientQuotasOptions,
+) -> (RequestHeader, AlterClientQuotasRequest) {
+    use kafka_protocol::messages::alter_client_quotas_request::{EntityData, EntryData, OpData};
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AlterClientQuotas,
+        API_VERSION_ALTER_CLIENT_QUOTAS,
+    );
+    let entries = options
+        .entries
+        .iter()
+        .map(|entry| {
+            EntryData::default()
+                .with_entity(
+                    entry
+                        .entity
+                        .iter()
+                        .map(|entity| {
+                            EntityData::default()
+                                .with_entity_type(StrBytes::from_string(entity.entity_type.clone()))
+                                .with_entity_name(
+                                    entity
+                                        .entity_name
+                                        .as_ref()
+                                        .map(|name| StrBytes::from_string(name.clone())),
+                                )
+                        })
+                        .collect(),
+                )
+                .with_ops(
+                    entry
+                        .ops
+                        .iter()
+                        .map(|op| {
+                            OpData::default()
+                                .with_key(StrBytes::from_string(op.key.clone()))
+                                .with_value(op.value)
+                                .with_remove(op.remove)
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = AlterClientQuotasRequest::default()
+        .with_entries(entries)
+        .with_validate_only(options.validate_only);
+
+    (header, request)
+}
+
 /// Build a `DescribeUserScramCredentials` request.
 pub fn build_describe_user_scram_credentials_request(
     correlation_id: i32,
@@ -3113,6 +3517,25 @@ pub fn convert_describe_configs_response(
                             .map(|documentation| documentation.to_string()),
                     })
                     .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `IncrementalAlterConfigsResponse` into the crate's public shape.
+pub fn convert_incremental_alter_configs_response(
+    response: IncrementalAlterConfigsResponse,
+) -> IncrementalAlterConfigsResponseData {
+    IncrementalAlterConfigsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        responses: response
+            .responses
+            .into_iter()
+            .map(|result| IncrementalAlterConfigsResourceResult {
+                error_code: result.error_code,
+                error_message: result.error_message.map(|message| message.to_string()),
+                resource_type: result.resource_type,
+                resource_name: result.resource_name.to_string(),
             })
             .collect(),
     }
@@ -3656,6 +4079,31 @@ pub fn convert_describe_client_quotas_response(
     }
 }
 
+/// Convert a generated `AlterClientQuotasResponse` into the crate's public shape.
+pub fn convert_alter_client_quotas_response(
+    response: AlterClientQuotasResponse,
+) -> AlterClientQuotasResponseData {
+    AlterClientQuotasResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        entries: response
+            .entries
+            .into_iter()
+            .map(|entry| AlterClientQuotaEntryResult {
+                error_code: entry.error_code,
+                error_message: entry.error_message.map(|message| message.to_string()),
+                entity: entry
+                    .entity
+                    .into_iter()
+                    .map(|entity| ClientQuotaEntity {
+                        entity_type: entity.entity_type.to_string(),
+                        entity_name: entity.entity_name.map(|name| name.to_string()),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeUserScramCredentialsResponse` into the crate's public shape.
 pub fn convert_describe_user_scram_credentials_response(
     response: DescribeUserScramCredentialsResponse,
@@ -3855,6 +4303,9 @@ fn transactional_id(value: &str) -> kafka_protocol::messages::TransactionalId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kafka_protocol::messages::alter_client_quotas_response::{
+        EntityData as KpAlterClientQuotaEntity, EntryData as KpAlterClientQuotaEntry,
+    };
     use kafka_protocol::messages::alter_partition_reassignments_response::{
         ReassignablePartitionResponse as KpReassignablePartitionResponse,
         ReassignableTopicResponse as KpReassignableTopicResponse,
@@ -3928,6 +4379,7 @@ mod tests {
         PartitionResult as KpElectionPartitionResult,
         ReplicaElectionResult as KpReplicaElectionResult,
     };
+    use kafka_protocol::messages::incremental_alter_configs_response::AlterConfigsResourceResponse as KpIncrementalAlterConfigsResourceResponse;
     use kafka_protocol::messages::list_config_resources_response::ConfigResource as KpListedConfigResource;
     use kafka_protocol::messages::list_groups_response::ListedGroup as KpListedGroup;
     use kafka_protocol::messages::list_partition_reassignments_response::{
@@ -4135,6 +4587,50 @@ mod tests {
             CONFIG_RESOURCE_TYPE_BROKER
         );
         assert!(request.resources[0].configuration_keys.is_none());
+    }
+
+    #[test]
+    fn incremental_alter_configs_request_preserves_operations() {
+        let options =
+            IncrementalAlterConfigsOptions::new([IncrementalAlterConfigsResource::topic(
+                "topic-a",
+                [
+                    IncrementalAlterConfig::set("retention.ms", "60000"),
+                    IncrementalAlterConfig::delete("cleanup.policy"),
+                    IncrementalAlterConfig::append("leader.replication.throttled.replicas", "1:2"),
+                ],
+            )])
+            .with_validate_only(true);
+        let (header, request) = build_incremental_alter_configs_request(12, "client-f", &options);
+
+        assert_eq!(
+            header.request_api_key,
+            ApiKey::IncrementalAlterConfigs as i16
+        );
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_INCREMENTAL_ALTER_CONFIGS
+        );
+        assert!(request.validate_only);
+        let resource = &request.resources[0];
+        assert_eq!(resource.resource_type, CONFIG_RESOURCE_TYPE_TOPIC);
+        assert_eq!(resource.resource_name.to_string(), "topic-a");
+        assert_eq!(resource.configs[0].name.to_string(), "retention.ms");
+        assert_eq!(resource.configs[0].config_operation, CONFIG_OPERATION_SET);
+        assert_eq!(
+            resource.configs[0].value.as_ref().map(ToString::to_string),
+            Some("60000".to_owned())
+        );
+        assert_eq!(resource.configs[1].name.to_string(), "cleanup.policy");
+        assert_eq!(
+            resource.configs[1].config_operation,
+            CONFIG_OPERATION_DELETE
+        );
+        assert!(resource.configs[1].value.is_none());
+        assert_eq!(
+            resource.configs[2].config_operation,
+            CONFIG_OPERATION_APPEND
+        );
     }
 
     #[test]
@@ -4477,6 +4973,42 @@ mod tests {
             CLIENT_QUOTA_MATCH_ANY_SPECIFIED
         );
         assert!(request.components[2]._match.is_none());
+    }
+
+    #[test]
+    fn alter_client_quotas_request_preserves_entities_and_ops() {
+        let options = AlterClientQuotasOptions::new([ClientQuotaAlteration::new(
+            [
+                ClientQuotaEntitySpec::named("user", "alice"),
+                ClientQuotaEntitySpec::default_entity("client-id"),
+            ],
+            [
+                ClientQuotaAlterationOp::set("producer_byte_rate", 1024.5),
+                ClientQuotaAlterationOp::remove("consumer_byte_rate"),
+            ],
+        )])
+        .with_validate_only(true);
+        let (header, request) = build_alter_client_quotas_request(24, "client-r", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::AlterClientQuotas as i16);
+        assert_eq!(header.request_api_version, API_VERSION_ALTER_CLIENT_QUOTAS);
+        assert!(request.validate_only);
+        let entry = &request.entries[0];
+        assert_eq!(entry.entity[0].entity_type.to_string(), "user");
+        assert_eq!(
+            entry.entity[0]
+                .entity_name
+                .as_ref()
+                .map(ToString::to_string),
+            Some("alice".to_owned())
+        );
+        assert_eq!(entry.entity[1].entity_type.to_string(), "client-id");
+        assert!(entry.entity[1].entity_name.is_none());
+        assert_eq!(entry.ops[0].key.to_string(), "producer_byte_rate");
+        assert!((entry.ops[0].value - 1024.5).abs() < f64::EPSILON);
+        assert!(!entry.ops[0].remove);
+        assert_eq!(entry.ops[1].key.to_string(), "consumer_byte_rate");
+        assert!(entry.ops[1].remove);
     }
 
     #[test]
@@ -4876,6 +5408,30 @@ mod tests {
             converted.results[0].configs[0].documentation,
             Some("retention window".to_owned())
         );
+    }
+
+    #[test]
+    fn convert_incremental_alter_configs_response_preserves_resource_results() {
+        let response = IncrementalAlterConfigsResponse::default()
+            .with_throttle_time_ms(15)
+            .with_responses(vec![
+                KpIncrementalAlterConfigsResourceResponse::default()
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok")))
+                    .with_resource_type(CONFIG_RESOURCE_TYPE_TOPIC)
+                    .with_resource_name(StrBytes::from_static_str("topic-a")),
+            ]);
+
+        let converted = convert_incremental_alter_configs_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 15);
+        assert_eq!(converted.responses[0].error_code, 0);
+        assert_eq!(converted.responses[0].error_message, Some("ok".to_owned()));
+        assert_eq!(
+            converted.responses[0].resource_type,
+            CONFIG_RESOURCE_TYPE_TOPIC
+        );
+        assert_eq!(converted.responses[0].resource_name, "topic-a");
     }
 
     #[test]
@@ -5466,6 +6022,38 @@ mod tests {
         assert!(entry.entity[1].entity_name.is_none());
         assert_eq!(entry.values[0].key, "producer_byte_rate");
         assert!((entry.values[0].value - 1024.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn convert_alter_client_quotas_response_preserves_entry_errors() {
+        let response = AlterClientQuotasResponse::default()
+            .with_throttle_time_ms(20)
+            .with_entries(vec![
+                KpAlterClientQuotaEntry::default()
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok")))
+                    .with_entity(vec![
+                        KpAlterClientQuotaEntity::default()
+                            .with_entity_type(StrBytes::from_static_str("user"))
+                            .with_entity_name(Some(StrBytes::from_static_str("alice"))),
+                        KpAlterClientQuotaEntity::default()
+                            .with_entity_type(StrBytes::from_static_str("client-id"))
+                            .with_entity_name(None),
+                    ]),
+            ]);
+
+        let converted = convert_alter_client_quotas_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 20);
+        assert_eq!(converted.entries[0].error_code, 0);
+        assert_eq!(converted.entries[0].error_message, Some("ok".to_owned()));
+        assert_eq!(converted.entries[0].entity[0].entity_type, "user");
+        assert_eq!(
+            converted.entries[0].entity[0].entity_name,
+            Some("alice".to_owned())
+        );
+        assert_eq!(converted.entries[0].entity[1].entity_type, "client-id");
+        assert!(converted.entries[0].entity[1].entity_name.is_none());
     }
 
     #[test]

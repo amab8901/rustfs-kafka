@@ -25,8 +25,9 @@ rustfs-kafka-async = "1.2.0"
 
 ## Core Features
 
-- Kafka client metadata, fetch, produce, offset commit, committed-offset deletion, API version, cluster/config,
-  config-resource discovery, topic partition discovery, ACL inspection/mutation, delegation token, client quota, SCRAM
+- Kafka client metadata, fetch, produce, offset commit, committed-offset deletion, API version, cluster/config
+  inspection/mutation, config-resource discovery, topic partition discovery, ACL inspection/mutation, delegation token, client quota
+  inspection/mutation, SCRAM
   credential, broker log directory, KRaft quorum, partition reassignment query/mutation, partition expansion,
   record deletion, leader election, leader-epoch offsets, active producer, transaction, consumer group deletion/inspection,
   and share group inspection APIs.
