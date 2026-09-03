@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   metadata, active producers, transactions, modern consumer group descriptions, share group descriptions, and share group
   offsets.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
+- Added `docs/protocol-coverage.md` to track `kafka-protocol` `0.18.0` API coverage and prioritize remaining
+  client-facing protocol work.
 
 ### Changed
 
