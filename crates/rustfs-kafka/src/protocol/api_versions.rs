@@ -11,11 +11,11 @@ use crate::protocol::{
     API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
     API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
     API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
-    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-    API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_GROUPS,
-    API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-    API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
-    API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
+    API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_TRANSACTIONS,
+    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
+    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA,
+    API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
 };
 use tracing::{debug, info};
 
@@ -41,10 +41,12 @@ pub mod api_key {
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
     pub const DESCRIBE_CLIENT_QUOTAS: i16 = 48;
     pub const DESCRIBE_USER_SCRAM_CREDENTIALS: i16 = 50;
+    pub const DESCRIBE_QUORUM: i16 = 55;
     pub const DESCRIBE_CLUSTER: i16 = 60;
     pub const DESCRIBE_PRODUCERS: i16 = 61;
     pub const DESCRIBE_TRANSACTIONS: i16 = 65;
     pub const LIST_TRANSACTIONS: i16 = 66;
+    pub const LIST_CONFIG_RESOURCES: i16 = 74;
 }
 
 /// One Kafka API version range advertised by a broker.
@@ -318,10 +320,12 @@ impl ApiVersionCache {
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             api_key::DESCRIBE_CLIENT_QUOTAS => API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             api_key::DESCRIBE_USER_SCRAM_CREDENTIALS => API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+            api_key::DESCRIBE_QUORUM => API_VERSION_DESCRIBE_QUORUM,
             api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
             api_key::DESCRIBE_PRODUCERS => API_VERSION_DESCRIBE_PRODUCERS,
             api_key::DESCRIBE_TRANSACTIONS => API_VERSION_DESCRIBE_TRANSACTIONS,
             api_key::LIST_TRANSACTIONS => API_VERSION_LIST_TRANSACTIONS,
+            api_key::LIST_CONFIG_RESOURCES => API_VERSION_LIST_CONFIG_RESOURCES,
             _ => 0,
         }
     }
@@ -379,10 +383,12 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             DESCRIBE_USER_SCRAM_CREDENTIALS,
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         ),
+        describe_quorum: version!(DESCRIBE_QUORUM, API_VERSION_DESCRIBE_QUORUM),
         describe_cluster: version!(DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CLUSTER),
         describe_producers: version!(DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_PRODUCERS),
         describe_transactions: version!(DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_TRANSACTIONS),
         list_transactions: version!(LIST_TRANSACTIONS, API_VERSION_LIST_TRANSACTIONS),
+        list_config_resources: version!(LIST_CONFIG_RESOURCES, API_VERSION_LIST_CONFIG_RESOURCES),
     }
 }
 
@@ -406,10 +412,12 @@ pub struct ApiVersions {
     pub list_partition_reassignments: i16,
     pub describe_client_quotas: i16,
     pub describe_user_scram_credentials: i16,
+    pub describe_quorum: i16,
     pub describe_cluster: i16,
     pub describe_producers: i16,
     pub describe_transactions: i16,
     pub list_transactions: i16,
+    pub list_config_resources: i16,
 }
 
 impl Default for ApiVersions {
@@ -431,10 +439,12 @@ impl Default for ApiVersions {
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             describe_client_quotas: API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             describe_user_scram_credentials: API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+            describe_quorum: API_VERSION_DESCRIBE_QUORUM,
             describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
             describe_producers: API_VERSION_DESCRIBE_PRODUCERS,
             describe_transactions: API_VERSION_DESCRIBE_TRANSACTIONS,
             list_transactions: API_VERSION_LIST_TRANSACTIONS,
+            list_config_resources: API_VERSION_LIST_CONFIG_RESOURCES,
         }
     }
 }
@@ -589,10 +599,12 @@ mod tests {
             v.describe_user_scram_credentials,
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         );
+        assert_eq!(v.describe_quorum, API_VERSION_DESCRIBE_QUORUM);
         assert_eq!(v.describe_cluster, API_VERSION_DESCRIBE_CLUSTER);
         assert_eq!(v.describe_producers, API_VERSION_DESCRIBE_PRODUCERS);
         assert_eq!(v.describe_transactions, API_VERSION_DESCRIBE_TRANSACTIONS);
         assert_eq!(v.list_transactions, API_VERSION_LIST_TRANSACTIONS);
+        assert_eq!(v.list_config_resources, API_VERSION_LIST_CONFIG_RESOURCES);
     }
 
     #[test]
@@ -622,10 +634,12 @@ mod tests {
             v.describe_user_scram_credentials,
             d.describe_user_scram_credentials
         );
+        assert_eq!(v.describe_quorum, d.describe_quorum);
         assert_eq!(v.describe_cluster, d.describe_cluster);
         assert_eq!(v.describe_producers, d.describe_producers);
         assert_eq!(v.describe_transactions, d.describe_transactions);
         assert_eq!(v.list_transactions, d.list_transactions);
+        assert_eq!(v.list_config_resources, d.list_config_resources);
     }
 
     #[test]
@@ -695,6 +709,10 @@ mod tests {
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         );
         assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_QUORUM),
+            API_VERSION_DESCRIBE_QUORUM
+        );
+        assert_eq!(
             ApiVersionCache::fallback_version(api_key::DESCRIBE_CLUSTER),
             API_VERSION_DESCRIBE_CLUSTER
         );
@@ -709,6 +727,10 @@ mod tests {
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::LIST_TRANSACTIONS),
             API_VERSION_LIST_TRANSACTIONS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::LIST_CONFIG_RESOURCES),
+            API_VERSION_LIST_CONFIG_RESOURCES
         );
     }
 

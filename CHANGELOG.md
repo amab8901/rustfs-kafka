@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `describe_cluster` / `describe_cluster_with_options`
   - `describe_acls` / `describe_acls_with_filter`
   - `describe_configs` / `describe_configs_with_options`
+  - `list_config_resources` / `list_config_resources_for`
   - `describe_delegation_tokens` / `describe_delegation_tokens_for`
   - `describe_log_dirs` / `describe_log_dirs_for`
+  - `describe_quorum`
   - `list_partition_reassignments` / `list_partition_reassignments_for`
   - `describe_client_quotas` / `describe_client_quotas_with_options`
   - `describe_user_scram_credentials` / `describe_user_scram_credentials_for`
@@ -24,9 +26,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `describe_transactions`
   - `list_groups` / `list_groups_with_filters`
   - `describe_groups` / `describe_groups_with_options`
-- Added public response data types for broker API versions, cluster brokers, config resources/entries, listed groups,
-  described groups, described group members, ACL resources, delegation tokens, log directory diagnostics, partition
-  reassignments, client quotas, SCRAM credential metadata, active producers, and transactions.
+- Added public response data types for broker API versions, cluster brokers, config resources/entries, config resource
+  discovery, listed groups, described groups, described group members, ACL resources, delegation tokens, log directory
+  diagnostics, KRaft quorum state, partition reassignments, client quotas, SCRAM credential metadata, active producers,
+  and transactions.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 
 ### Changed

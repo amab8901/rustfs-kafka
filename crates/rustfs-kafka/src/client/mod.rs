@@ -14,7 +14,7 @@
 //! - **Cluster, ACL, config, token, quota, SCRAM credential, broker storage, producer, transaction, API version, and group inspection** via
 //!   `describe_cluster()` / `describe_acls()` / `describe_configs()` / `describe_log_dirs()` /
 //!   `describe_delegation_tokens()` / `describe_client_quotas()` / `describe_user_scram_credentials()` /
-//!   `describe_producers()` / `list_transactions()` / `fetch_api_versions()` /
+//!   `describe_quorum()` / `list_config_resources()` / `describe_producers()` / `list_transactions()` / `fetch_api_versions()` /
 //!   `list_groups()` / `describe_groups()`
 //!
 //! # Examples
@@ -61,17 +61,20 @@ pub use crate::protocol::admin::{
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
     ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclDescription, AclResource,
     ActiveProducer, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
-    CLIENT_QUOTA_MATCH_EXACT, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
+    CLIENT_QUOTA_MATCH_EXACT, CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER,
+    CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
     ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
     DelegationTokenDescription, DescribeAclsFilter, DescribeAclsResponseData,
     DescribeClientQuotasOptions, DescribeClientQuotasResponseData, DescribeClusterResponseData,
     DescribeConfigsResponseData, DescribeConfigsResult, DescribeDelegationTokenResponseData,
     DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
-    DescribeTransactionsResponseData, DescribeUserScramCredentialsResponseData, DescribedGroup,
-    DescribedGroupMember, DescribedTransaction, KafkaPrincipal, ListGroupsResponseData,
+    DescribeQuorumResponseData, DescribeTransactionsResponseData,
+    DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
+    DescribedTransaction, KafkaPrincipal, ListConfigResourcesResponseData, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
-    ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition, LogDirTopic,
-    PartitionReassignment, ProducerPartition, ProducerTopic, SCRAM_MECHANISM_SHA_256,
+    ListedConfigResource, ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition,
+    LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, QuorumListener,
+    QuorumNode, QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
     SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, TopicPartitionFilter, TopicReassignment,
     TransactionTopic, UserScramCredentialsDescription,
 };
@@ -1218,6 +1221,119 @@ impl KafkaClient {
                 Err(e) => {
                     last_err = Some(e.with_broker_context(&host, "ListPartitionReassignments"));
                 }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes `KRaft` quorum state for selected topic partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_quorum(
+        &mut self,
+        topics: &[TopicPartitionFilter],
+    ) -> Result<DescribeQuorumResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeQuorum"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_quorum_request(
+                correlation_id,
+                &self.config.client_id,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_QUORUM,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeQuorumResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_QUORUM,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_quorum_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeQuorum")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Lists config resources for the broker's default supported resource types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn list_config_resources(&mut self) -> Result<ListConfigResourcesResponseData> {
+        self.list_config_resources_for(&[])
+    }
+
+    /// Lists config resources for selected Kafka config resource types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn list_config_resources_for(
+        &mut self,
+        resource_types: &[i8],
+    ) -> Result<ListConfigResourcesResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ListConfigResources"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_list_config_resources_request(
+                correlation_id,
+                &self.config.client_id,
+                resource_types,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_LIST_CONFIG_RESOURCES,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::ListConfigResourcesResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_LIST_CONFIG_RESOURCES,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_list_config_resources_response(resp),
+                    );
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ListConfigResources")),
             }
         }
 

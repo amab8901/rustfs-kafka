@@ -134,6 +134,7 @@ use rustfs_kafka::client::{
     ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
     KafkaClient, KafkaPrincipal, ListTransactionsOptions, TopicPartitionFilter,
     ACL_OPERATION_READ, ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
+    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_TOPIC,
 };
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
@@ -186,6 +187,17 @@ for resource in configs.results {
     println!("resource={} configs={}", resource.resource_name, resource.configs.len());
 }
 
+let config_resources = client
+    .list_config_resources_for(&[CONFIG_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER])
+    .unwrap();
+for resource in config_resources.resources {
+    println!(
+        "config_resource={} type={}",
+        resource.resource_name,
+        resource.resource_type
+    );
+}
+
 let partitions = [TopicPartitionFilter::new("my-topic", [0, 1])];
 
 let log_dirs = client.describe_log_dirs_for(&partitions).unwrap();
@@ -203,6 +215,12 @@ let reassignments = client
     .unwrap();
 for topic in reassignments.topics {
     println!("topic={} reassignments={}", topic.name, topic.partitions.len());
+}
+
+let metadata_quorum = [TopicPartitionFilter::new("cluster-metadata", [0])];
+let quorum = client.describe_quorum(&metadata_quorum).unwrap();
+for topic in quorum.topics {
+    println!("quorum_topic={} partitions={}", topic.name, topic.partitions.len());
 }
 
 let tokens = client
@@ -263,9 +281,11 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_groups_with_options(groups, include_authorized_operations)`
 - `describe_acls_with_filter(filter)`
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
+- `list_config_resources_for(resource_types)`
 - `describe_delegation_tokens_for(owners)`
 - `describe_log_dirs_for(topic_partition_filters)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
+- `describe_quorum(topic_partition_filters)`
 - `describe_client_quotas_with_options(options)`
 - `describe_user_scram_credentials_for(users)`
 - `list_transactions_with_options(options)`

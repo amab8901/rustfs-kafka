@@ -7,11 +7,12 @@ use kafka_protocol::messages::{
     DescribeConfigsRequest, DescribeConfigsResponse, DescribeDelegationTokenRequest,
     DescribeDelegationTokenResponse, DescribeGroupsRequest, DescribeGroupsResponse,
     DescribeLogDirsRequest, DescribeLogDirsResponse, DescribeProducersRequest,
-    DescribeProducersResponse, DescribeTransactionsRequest, DescribeTransactionsResponse,
-    DescribeUserScramCredentialsRequest, DescribeUserScramCredentialsResponse, GroupId,
-    ListGroupsRequest, ListGroupsResponse, ListPartitionReassignmentsRequest,
-    ListPartitionReassignmentsResponse, ListTransactionsRequest, ListTransactionsResponse,
-    RequestHeader,
+    DescribeProducersResponse, DescribeQuorumRequest, DescribeQuorumResponse,
+    DescribeTransactionsRequest, DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
+    DescribeUserScramCredentialsResponse, GroupId, ListConfigResourcesRequest,
+    ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
+    ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
+    ListTransactionsResponse, RequestHeader,
 };
 use kafka_protocol::protocol::StrBytes;
 
@@ -19,7 +20,8 @@ use super::{
     API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
     API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
     API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
-    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_TRANSACTIONS,
+    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_LIST_CONFIG_RESOURCES,
     API_VERSION_LIST_GROUPS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
     API_VERSION_LIST_TRANSACTIONS,
 };
@@ -179,6 +181,104 @@ impl TopicPartitionFilter {
             partitions: partitions.into_iter().collect(),
         }
     }
+}
+
+/// One configurable resource returned by `ListConfigResources`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedConfigResource {
+    /// Kafka config resource type.
+    pub resource_type: i8,
+    /// Resource name.
+    pub resource_name: String,
+}
+
+/// Parsed response from a `ListConfigResources` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListConfigResourcesResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Config resources returned by the broker.
+    pub resources: Vec<ListedConfigResource>,
+}
+
+/// Endpoint for one `KRaft` quorum node returned by `DescribeQuorum`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuorumListener {
+    /// Listener name.
+    pub name: String,
+    /// Listener host.
+    pub host: String,
+    /// Listener port.
+    pub port: u16,
+}
+
+/// One `KRaft` quorum node returned by `DescribeQuorum`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuorumNode {
+    /// Broker or controller node ID.
+    pub node_id: i32,
+    /// Listeners returned for this node.
+    pub listeners: Vec<QuorumListener>,
+}
+
+/// Replica state returned by `DescribeQuorum`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuorumReplicaState {
+    /// Broker or controller replica ID.
+    pub replica_id: i32,
+    /// Replica directory UUID as a string, or Kafka's nil UUID sentinel.
+    pub replica_directory_id: String,
+    /// Last known log end offset.
+    pub log_end_offset: i64,
+    /// Last fetch timestamp in milliseconds, or Kafka's `-1` sentinel.
+    pub last_fetch_timestamp: i64,
+    /// Last caught-up timestamp in milliseconds, or Kafka's `-1` sentinel.
+    pub last_caught_up_timestamp: i64,
+}
+
+/// Per-partition `KRaft` quorum state returned by `DescribeQuorum`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuorumPartition {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+    /// Optional per-partition broker error message.
+    pub error_message: Option<String>,
+    /// Current leader ID, or Kafka's `-1` sentinel if unknown.
+    pub leader_id: i32,
+    /// Latest known leader epoch.
+    pub leader_epoch: i32,
+    /// High watermark for the quorum partition.
+    pub high_watermark: i64,
+    /// Current voters in the quorum.
+    pub current_voters: Vec<QuorumReplicaState>,
+    /// Observers in the quorum.
+    pub observers: Vec<QuorumReplicaState>,
+}
+
+/// Per-topic `KRaft` quorum state returned by `DescribeQuorum`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuorumTopic {
+    /// Topic name.
+    pub name: String,
+    /// Partition quorum states.
+    pub partitions: Vec<QuorumPartition>,
+}
+
+/// Parsed response from a `DescribeQuorum` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeQuorumResponseData {
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Optional top-level broker error message.
+    pub error_message: Option<String>,
+    /// Quorum state grouped by topic.
+    pub topics: Vec<QuorumTopic>,
+    /// Quorum nodes returned by Kafka v2+.
+    pub nodes: Vec<QuorumNode>,
 }
 
 /// A Kafka principal identified by type and name.
@@ -1177,6 +1277,62 @@ pub fn build_list_partition_reassignments_request(
     (header, request)
 }
 
+/// Build a `DescribeQuorum` request.
+pub fn build_describe_quorum_request(
+    correlation_id: i32,
+    client_id: &str,
+    topics: &[TopicPartitionFilter],
+) -> (RequestHeader, DescribeQuorumRequest) {
+    use kafka_protocol::messages::describe_quorum_request::{
+        PartitionData as QuorumPartitionRequest, TopicData as QuorumTopicRequest,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeQuorum,
+        API_VERSION_DESCRIBE_QUORUM,
+    );
+    let topics = topics
+        .iter()
+        .map(|topic| {
+            QuorumTopicRequest::default()
+                .with_topic_name(StrBytes::from_string(topic.topic.clone()).into())
+                .with_partitions(
+                    topic
+                        .partitions
+                        .iter()
+                        .copied()
+                        .map(|partition| {
+                            QuorumPartitionRequest::default().with_partition_index(partition)
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = DescribeQuorumRequest::default().with_topics(topics);
+
+    (header, request)
+}
+
+/// Build a `ListConfigResources` request.
+pub fn build_list_config_resources_request(
+    correlation_id: i32,
+    client_id: &str,
+    resource_types: &[i8],
+) -> (RequestHeader, ListConfigResourcesRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::ListConfigResources,
+        API_VERSION_LIST_CONFIG_RESOURCES,
+    );
+    let request =
+        ListConfigResourcesRequest::default().with_resource_types(resource_types.to_vec());
+
+    (header, request)
+}
+
 /// Build a `DescribeClientQuotas` request.
 pub fn build_describe_client_quotas_request(
     correlation_id: i32,
@@ -1604,6 +1760,91 @@ pub fn convert_list_partition_reassignments_response(
     }
 }
 
+/// Convert a generated `DescribeQuorumResponse` into the crate's public shape.
+pub fn convert_describe_quorum_response(
+    response: DescribeQuorumResponse,
+) -> DescribeQuorumResponseData {
+    DescribeQuorumResponseData {
+        error_code: response.error_code,
+        error_message: response.error_message.map(|message| message.to_string()),
+        topics: response
+            .topics
+            .into_iter()
+            .map(|topic| QuorumTopic {
+                name: topic.topic_name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|partition| QuorumPartition {
+                        partition_index: partition.partition_index,
+                        error_code: partition.error_code,
+                        error_message: partition.error_message.map(|message| message.to_string()),
+                        leader_id: i32::from(partition.leader_id),
+                        leader_epoch: partition.leader_epoch,
+                        high_watermark: partition.high_watermark,
+                        current_voters: partition
+                            .current_voters
+                            .iter()
+                            .map(convert_quorum_replica_state)
+                            .collect(),
+                        observers: partition
+                            .observers
+                            .iter()
+                            .map(convert_quorum_replica_state)
+                            .collect(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        nodes: response
+            .nodes
+            .into_iter()
+            .map(|node| QuorumNode {
+                node_id: i32::from(node.node_id),
+                listeners: node
+                    .listeners
+                    .into_iter()
+                    .map(|listener| QuorumListener {
+                        name: listener.name.to_string(),
+                        host: listener.host.to_string(),
+                        port: listener.port,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+fn convert_quorum_replica_state(
+    replica: &kafka_protocol::messages::describe_quorum_response::ReplicaState,
+) -> QuorumReplicaState {
+    QuorumReplicaState {
+        replica_id: i32::from(replica.replica_id),
+        replica_directory_id: replica.replica_directory_id.to_string(),
+        log_end_offset: replica.log_end_offset,
+        last_fetch_timestamp: replica.last_fetch_timestamp,
+        last_caught_up_timestamp: replica.last_caught_up_timestamp,
+    }
+}
+
+/// Convert a generated `ListConfigResourcesResponse` into the crate's public shape.
+pub fn convert_list_config_resources_response(
+    response: ListConfigResourcesResponse,
+) -> ListConfigResourcesResponseData {
+    ListConfigResourcesResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        resources: response
+            .config_resources
+            .into_iter()
+            .map(|resource| ListedConfigResource {
+                resource_type: resource.resource_type,
+                resource_name: resource.resource_name.to_string(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeClientQuotasResponse` into the crate's public shape.
 pub fn convert_describe_client_quotas_response(
     response: DescribeClientQuotasResponse,
@@ -1817,6 +2058,10 @@ mod tests {
         PartitionResponse as KpProducerPartition, ProducerState as KpProducerState,
         TopicResponse as KpProducerTopic,
     };
+    use kafka_protocol::messages::describe_quorum_response::{
+        Listener as KpQuorumListener, Node as KpQuorumNode, PartitionData as KpQuorumPartition,
+        ReplicaState as KpQuorumReplica, TopicData as KpQuorumTopic,
+    };
     use kafka_protocol::messages::describe_transactions_response::{
         TopicData as KpDescribeTransactionTopic, TransactionState as KpDescribedTransactionState,
     };
@@ -1824,6 +2069,7 @@ mod tests {
         CredentialInfo as KpScramCredentialInfo,
         DescribeUserScramCredentialsResult as KpScramCredentialsResult,
     };
+    use kafka_protocol::messages::list_config_resources_response::ConfigResource as KpListedConfigResource;
     use kafka_protocol::messages::list_groups_response::ListedGroup as KpListedGroup;
     use kafka_protocol::messages::list_partition_reassignments_response::{
         OngoingPartitionReassignment as KpOngoingPartitionReassignment,
@@ -2012,13 +2258,43 @@ mod tests {
     }
 
     #[test]
+    fn describe_quorum_request_uses_topic_partition_filters() {
+        let filter = [TopicPartitionFilter::new("cluster-metadata", [0])];
+        let (header, request) = build_describe_quorum_request(17, "client-l", &filter);
+
+        assert_eq!(header.request_api_key, ApiKey::DescribeQuorum as i16);
+        assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_QUORUM);
+        assert_eq!(request.topics[0].topic_name.to_string(), "cluster-metadata");
+        assert_eq!(request.topics[0].partitions[0].partition_index, 0);
+    }
+
+    #[test]
+    fn list_config_resources_request_accepts_resource_type_filters() {
+        let (header, request) = build_list_config_resources_request(
+            18,
+            "client-m",
+            &[CONFIG_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER],
+        );
+
+        assert_eq!(header.request_api_key, ApiKey::ListConfigResources as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_LIST_CONFIG_RESOURCES
+        );
+        assert_eq!(
+            request.resource_types,
+            vec![CONFIG_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER]
+        );
+    }
+
+    #[test]
     fn describe_client_quotas_request_accepts_entity_filters() {
         let options = DescribeClientQuotasOptions::new()
             .with_component(ClientQuotaEntityFilter::exact("user", "alice"))
             .with_component(ClientQuotaEntityFilter::default_entity("client-id"))
             .with_component(ClientQuotaEntityFilter::any_specified("ip"))
             .strict();
-        let (header, request) = build_describe_client_quotas_request(17, "client-l", &options);
+        let (header, request) = build_describe_client_quotas_request(19, "client-n", &options);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeClientQuotas as i16);
         assert_eq!(
@@ -2048,9 +2324,9 @@ mod tests {
     #[test]
     fn describe_user_scram_credentials_request_distinguishes_all_and_selected_users() {
         let (all_header, all_request) =
-            build_describe_user_scram_credentials_request(18, "client-m", None);
+            build_describe_user_scram_credentials_request(20, "client-o", None);
         let (selected_header, selected_request) =
-            build_describe_user_scram_credentials_request(19, "client-n", Some(&["alice", "bob"]));
+            build_describe_user_scram_credentials_request(21, "client-p", Some(&["alice", "bob"]));
 
         assert_eq!(
             all_header.request_api_key,
@@ -2061,7 +2337,7 @@ mod tests {
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         );
         assert!(all_request.users.is_none());
-        assert_eq!(selected_header.correlation_id, 19);
+        assert_eq!(selected_header.correlation_id, 21);
         let users = selected_request.users.unwrap();
         assert_eq!(users[0].name.to_string(), "alice");
         assert_eq!(users[1].name.to_string(), "bob");
@@ -2070,7 +2346,7 @@ mod tests {
     #[test]
     fn describe_producers_request_uses_topic_partition_filters() {
         let filter = [TopicPartitionFilter::new("topic-a", [0, 1])];
-        let (header, request) = build_describe_producers_request(20, "client-o", &filter);
+        let (header, request) = build_describe_producers_request(22, "client-q", &filter);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeProducers as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_PRODUCERS);
@@ -2085,7 +2361,7 @@ mod tests {
             .with_producer_id_filters([42, 43])
             .with_duration_filter_ms(30_000)
             .with_transactional_id_pattern("rustfs-.*");
-        let (header, request) = build_list_transactions_request(21, "client-p", &options);
+        let (header, request) = build_list_transactions_request(23, "client-r", &options);
 
         assert_eq!(header.request_api_key, ApiKey::ListTransactions as i16);
         assert_eq!(header.request_api_version, API_VERSION_LIST_TRANSACTIONS);
@@ -2116,7 +2392,7 @@ mod tests {
     #[test]
     fn describe_transactions_request_includes_transactional_ids() {
         let (header, request) =
-            build_describe_transactions_request(22, "client-q", &["txn-a", "txn-b"]);
+            build_describe_transactions_request(24, "client-s", &["txn-a", "txn-b"]);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeTransactions as i16);
         assert_eq!(
@@ -2429,9 +2705,103 @@ mod tests {
     }
 
     #[test]
+    fn convert_describe_quorum_response_preserves_kraft_state() {
+        let response = DescribeQuorumResponse::default()
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("ok")))
+            .with_topics(vec![
+                KpQuorumTopic::default()
+                    .with_topic_name(StrBytes::from_static_str("cluster-metadata").into())
+                    .with_partitions(vec![
+                        KpQuorumPartition::default()
+                            .with_partition_index(0)
+                            .with_error_code(0)
+                            .with_error_message(Some(StrBytes::from_static_str("ok")))
+                            .with_leader_id(BrokerId::from(1))
+                            .with_leader_epoch(7)
+                            .with_high_watermark(128)
+                            .with_current_voters(vec![
+                                KpQuorumReplica::default()
+                                    .with_replica_id(BrokerId::from(1))
+                                    .with_log_end_offset(128)
+                                    .with_last_fetch_timestamp(-1)
+                                    .with_last_caught_up_timestamp(1_700_000),
+                            ])
+                            .with_observers(vec![
+                                KpQuorumReplica::default()
+                                    .with_replica_id(BrokerId::from(2))
+                                    .with_log_end_offset(120)
+                                    .with_last_fetch_timestamp(1_699_900)
+                                    .with_last_caught_up_timestamp(1_699_800),
+                            ]),
+                    ]),
+            ])
+            .with_nodes(vec![
+                KpQuorumNode::default()
+                    .with_node_id(BrokerId::from(1))
+                    .with_listeners(vec![
+                        KpQuorumListener::default()
+                            .with_name(StrBytes::from_static_str("CONTROLLER"))
+                            .with_host(StrBytes::from_static_str("broker-1"))
+                            .with_port(9093),
+                    ]),
+            ]);
+
+        let converted = convert_describe_quorum_response(response);
+
+        assert_eq!(converted.error_message, Some("ok".to_owned()));
+        assert_eq!(converted.topics[0].name, "cluster-metadata");
+        let partition = &converted.topics[0].partitions[0];
+        assert_eq!(partition.leader_id, 1);
+        assert_eq!(partition.leader_epoch, 7);
+        assert_eq!(partition.high_watermark, 128);
+        assert_eq!(partition.current_voters[0].replica_id, 1);
+        assert_eq!(partition.observers[0].log_end_offset, 120);
+        assert_eq!(
+            partition.current_voters[0].replica_directory_id,
+            "00000000-0000-0000-0000-000000000000"
+        );
+        assert_eq!(converted.nodes[0].listeners[0].host, "broker-1");
+        assert_eq!(converted.nodes[0].listeners[0].port, 9093);
+    }
+
+    #[test]
+    fn convert_list_config_resources_response_preserves_resource_types() {
+        let response = ListConfigResourcesResponse::default()
+            .with_throttle_time_ms(18)
+            .with_error_code(0)
+            .with_config_resources(vec![
+                KpListedConfigResource::default()
+                    .with_resource_type(CONFIG_RESOURCE_TYPE_TOPIC)
+                    .with_resource_name(StrBytes::from_static_str("topic-a")),
+                KpListedConfigResource::default()
+                    .with_resource_type(CONFIG_RESOURCE_TYPE_BROKER)
+                    .with_resource_name(StrBytes::from_static_str("1")),
+            ]);
+
+        let converted = convert_list_config_resources_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(
+            converted.resources,
+            vec![
+                ListedConfigResource {
+                    resource_type: CONFIG_RESOURCE_TYPE_TOPIC,
+                    resource_name: "topic-a".to_owned(),
+                },
+                ListedConfigResource {
+                    resource_type: CONFIG_RESOURCE_TYPE_BROKER,
+                    resource_name: "1".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn convert_describe_client_quotas_response_preserves_entities_and_values() {
         let response = DescribeClientQuotasResponse::default()
-            .with_throttle_time_ms(18)
+            .with_throttle_time_ms(19)
             .with_error_code(0)
             .with_error_message(Some(StrBytes::from_static_str("ok")))
             .with_entries(Some(vec![
@@ -2453,7 +2823,7 @@ mod tests {
 
         let converted = convert_describe_client_quotas_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.throttle_time_ms, 19);
         assert_eq!(converted.error_message, Some("ok".to_owned()));
         let entry = &converted.entries.as_ref().unwrap()[0];
         assert_eq!(entry.entity[0].entity_type, "user");
@@ -2467,7 +2837,7 @@ mod tests {
     #[test]
     fn convert_describe_user_scram_credentials_response_preserves_credentials() {
         let response = DescribeUserScramCredentialsResponse::default()
-            .with_throttle_time_ms(19)
+            .with_throttle_time_ms(20)
             .with_error_code(0)
             .with_error_message(Some(StrBytes::from_static_str("ok")))
             .with_results(vec![
@@ -2487,7 +2857,7 @@ mod tests {
 
         let converted = convert_describe_user_scram_credentials_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 19);
+        assert_eq!(converted.throttle_time_ms, 20);
         assert_eq!(converted.error_message, Some("ok".to_owned()));
         assert_eq!(converted.results[0].user, "alice");
         assert_eq!(converted.results[0].credential_infos.len(), 2);
@@ -2501,7 +2871,7 @@ mod tests {
     #[test]
     fn convert_describe_producers_response_preserves_active_producers() {
         let response = DescribeProducersResponse::default()
-            .with_throttle_time_ms(20)
+            .with_throttle_time_ms(21)
             .with_topics(vec![
                 KpProducerTopic::default()
                     .with_name(StrBytes::from_static_str("topic-a").into())
@@ -2524,7 +2894,7 @@ mod tests {
 
         let converted = convert_describe_producers_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 20);
+        assert_eq!(converted.throttle_time_ms, 21);
         assert_eq!(converted.topics[0].name, "topic-a");
         assert_eq!(
             converted.topics[0].partitions[0].error_message,
@@ -2543,7 +2913,7 @@ mod tests {
     #[test]
     fn convert_list_transactions_response_preserves_state_filters_and_transactions() {
         let response = ListTransactionsResponse::default()
-            .with_throttle_time_ms(21)
+            .with_throttle_time_ms(22)
             .with_error_code(0)
             .with_unknown_state_filters(vec![StrBytes::from_static_str("UnknownState")])
             .with_transaction_states(vec![
@@ -2555,7 +2925,7 @@ mod tests {
 
         let converted = convert_list_transactions_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 21);
+        assert_eq!(converted.throttle_time_ms, 22);
         assert_eq!(converted.unknown_state_filters, vec!["UnknownState"]);
         assert_eq!(
             converted.transaction_states,
@@ -2570,7 +2940,7 @@ mod tests {
     #[test]
     fn convert_describe_transactions_response_preserves_transaction_details() {
         let response = DescribeTransactionsResponse::default()
-            .with_throttle_time_ms(22)
+            .with_throttle_time_ms(23)
             .with_transaction_states(vec![
                 KpDescribedTransactionState::default()
                     .with_error_code(0)
@@ -2589,7 +2959,7 @@ mod tests {
 
         let converted = convert_describe_transactions_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 22);
+        assert_eq!(converted.throttle_time_ms, 23);
         assert_eq!(converted.transaction_states[0].transactional_id, "txn-a");
         assert_eq!(
             converted.transaction_states[0].transaction_timeout_ms,
