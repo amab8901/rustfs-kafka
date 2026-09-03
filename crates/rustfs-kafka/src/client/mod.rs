@@ -14,8 +14,8 @@
 //! - **Cluster, ACL, config, token, quota, SCRAM credential, broker storage, producer, transaction, API version, and group inspection** via
 //!   `describe_cluster()` / `describe_acls()` / `describe_configs()` / `describe_log_dirs()` /
 //!   `describe_delegation_tokens()` / `describe_client_quotas()` / `describe_user_scram_credentials()` /
-//!   `describe_quorum()` / `list_config_resources()` / `describe_producers()` / `list_transactions()` / `fetch_api_versions()` /
-//!   `list_groups()` / `describe_groups()`
+//!   `describe_quorum()` / `list_config_resources()` / `describe_topic_partitions()` / `describe_producers()` /
+//!   `list_transactions()` / `fetch_api_versions()` / `list_groups()` / `describe_groups()` / `describe_consumer_groups()`
 //!
 //! # Examples
 //!
@@ -64,19 +64,22 @@ pub use crate::protocol::admin::{
     CLIENT_QUOTA_MATCH_EXACT, CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER,
     CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
     ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
-    DelegationTokenDescription, DescribeAclsFilter, DescribeAclsResponseData,
-    DescribeClientQuotasOptions, DescribeClientQuotasResponseData, DescribeClusterResponseData,
-    DescribeConfigsResponseData, DescribeConfigsResult, DescribeDelegationTokenResponseData,
-    DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
-    DescribeQuorumResponseData, DescribeTransactionsResponseData,
-    DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
+    ConsumerGroupAssignment, ConsumerGroupDescribeResponseData, ConsumerGroupDescription,
+    ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, DelegationTokenDescription,
+    DescribeAclsFilter, DescribeAclsResponseData, DescribeClientQuotasOptions,
+    DescribeClientQuotasResponseData, DescribeClusterResponseData, DescribeConfigsResponseData,
+    DescribeConfigsResult, DescribeDelegationTokenResponseData, DescribeGroupsResponseData,
+    DescribeLogDirsResponseData, DescribeProducersResponseData, DescribeQuorumResponseData,
+    DescribeTopicPartitionsOptions, DescribeTopicPartitionsResponseData,
+    DescribeTransactionsResponseData, DescribeUserScramCredentialsResponseData, DescribedGroup,
+    DescribedGroupMember, DescribedTopicPartition, DescribedTopicPartitionsTopic,
     DescribedTransaction, KafkaPrincipal, ListConfigResourcesResponseData, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
     ListedConfigResource, ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition,
     LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, QuorumListener,
     QuorumNode, QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
-    SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, TopicPartitionFilter, TopicReassignment,
-    TransactionTopic, UserScramCredentialsDescription,
+    SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, TopicPartitionFilter, TopicPartitionsCursor,
+    TopicReassignment, TransactionTopic, UserScramCredentialsDescription,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
@@ -1340,6 +1343,76 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Describes topic and partition metadata for one response page.
+    ///
+    /// Empty `topics` returns all topics visible to the broker, subject to `response_partition_limit`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_topic_partitions(
+        &mut self,
+        topics: &[&str],
+        response_partition_limit: i32,
+    ) -> Result<DescribeTopicPartitionsResponseData> {
+        let options = DescribeTopicPartitionsOptions::new(response_partition_limit)
+            .with_topics(topics.iter().copied());
+        self.describe_topic_partitions_with_options(&options)
+    }
+
+    /// Describes topic and partition metadata using Kafka pagination options.
+    ///
+    /// Use `DescribeTopicPartitionsResponseData::next_cursor` to request subsequent pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_topic_partitions_with_options(
+        &mut self,
+        options: &DescribeTopicPartitionsOptions,
+    ) -> Result<DescribeTopicPartitionsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeTopicPartitions"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_topic_partitions_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DescribeTopicPartitionsResponse,
+                >(conn, crate::protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS)
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_describe_topic_partitions_response(resp),
+                    );
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTopicPartitions")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Describes all client quota entities visible to the contacted broker.
     ///
     /// # Errors
@@ -1641,6 +1714,75 @@ impl KafkaClient {
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTransactions")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes modern consumer group state for the supplied group IDs.
+    ///
+    /// This uses Kafka's `ConsumerGroupDescribe` API and returns structured member
+    /// subscription and assignment data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_consumer_groups(
+        &mut self,
+        groups: &[&str],
+    ) -> Result<ConsumerGroupDescribeResponseData> {
+        self.describe_consumer_groups_with_options(groups, false)
+    }
+
+    /// Describes modern consumer group state with optional authorized-operation fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_consumer_groups_with_options(
+        &mut self,
+        groups: &[&str],
+        include_authorized_operations: bool,
+    ) -> Result<ConsumerGroupDescribeResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ConsumerGroupDescribe"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_consumer_group_describe_request(
+                correlation_id,
+                &self.config.client_id,
+                groups,
+                include_authorized_operations,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::ConsumerGroupDescribeResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_consumer_group_describe_response(resp),
+                    );
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ConsumerGroupDescribe")),
             }
         }
 

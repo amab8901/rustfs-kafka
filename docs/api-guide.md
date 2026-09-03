@@ -132,9 +132,10 @@ tx.commit().unwrap();
 use std::time::Duration;
 use rustfs_kafka::client::{
     ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
-    KafkaClient, KafkaPrincipal, ListTransactionsOptions, TopicPartitionFilter,
-    ACL_OPERATION_READ, ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
-    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_TOPIC,
+    DescribeTopicPartitionsOptions, KafkaClient, KafkaPrincipal, ListTransactionsOptions,
+    TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ, ACL_PATTERN_TYPE_LITERAL,
+    ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER,
+    CONFIG_RESOURCE_TYPE_TOPIC,
 };
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
@@ -165,6 +166,36 @@ let described = client.describe_groups(&["my-group"]).unwrap();
 for group in described.groups {
     println!("group={} members={}", group.group_id, group.members.len());
 }
+
+let consumer_groups = client
+    .describe_consumer_groups_with_options(&["my-group"], true)
+    .unwrap();
+for group in consumer_groups.groups {
+    println!(
+        "consumer_group={} epoch={} members={}",
+        group.group_id,
+        group.group_epoch,
+        group.members.len()
+    );
+}
+
+let topic_page = client.describe_topic_partitions(&["my-topic"], 100).unwrap();
+for topic in topic_page.topics {
+    println!(
+        "topic={:?} partitions={}",
+        topic.name,
+        topic.partitions.len()
+    );
+}
+
+let next_topic_page = client
+    .describe_topic_partitions_with_options(
+        &DescribeTopicPartitionsOptions::new(100)
+            .with_topics(["my-topic"])
+            .with_cursor(TopicPartitionsCursor::new("my-topic", 100)),
+    )
+    .unwrap();
+println!("next_page_topics={}", next_topic_page.topics.len());
 
 let acl_filter = DescribeAclsFilter::any()
     .with_resource_type(ACL_RESOURCE_TYPE_TOPIC)
@@ -279,6 +310,8 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_cluster_with_options(include_authorized_operations, include_fenced_brokers)`
 - `list_groups_with_filters(states_filter, types_filter)`
 - `describe_groups_with_options(groups, include_authorized_operations)`
+- `describe_consumer_groups_with_options(groups, include_authorized_operations)`
+- `describe_topic_partitions_with_options(options)`
 - `describe_acls_with_filter(filter)`
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
 - `list_config_resources_for(resource_types)`

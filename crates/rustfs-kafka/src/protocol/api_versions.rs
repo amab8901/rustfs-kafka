@@ -8,10 +8,11 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
-    API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
-    API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
-    API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_TRANSACTIONS,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_DESCRIBE_ACLS,
+    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
+    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
+    API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
     API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
     API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
     API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA,
@@ -46,7 +47,9 @@ pub mod api_key {
     pub const DESCRIBE_PRODUCERS: i16 = 61;
     pub const DESCRIBE_TRANSACTIONS: i16 = 65;
     pub const LIST_TRANSACTIONS: i16 = 66;
+    pub const CONSUMER_GROUP_DESCRIBE: i16 = 69;
     pub const LIST_CONFIG_RESOURCES: i16 = 74;
+    pub const DESCRIBE_TOPIC_PARTITIONS: i16 = 75;
 }
 
 /// One Kafka API version range advertised by a broker.
@@ -325,7 +328,9 @@ impl ApiVersionCache {
             api_key::DESCRIBE_PRODUCERS => API_VERSION_DESCRIBE_PRODUCERS,
             api_key::DESCRIBE_TRANSACTIONS => API_VERSION_DESCRIBE_TRANSACTIONS,
             api_key::LIST_TRANSACTIONS => API_VERSION_LIST_TRANSACTIONS,
+            api_key::CONSUMER_GROUP_DESCRIBE => API_VERSION_CONSUMER_GROUP_DESCRIBE,
             api_key::LIST_CONFIG_RESOURCES => API_VERSION_LIST_CONFIG_RESOURCES,
+            api_key::DESCRIBE_TOPIC_PARTITIONS => API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
             _ => 0,
         }
     }
@@ -388,7 +393,15 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
         describe_producers: version!(DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_PRODUCERS),
         describe_transactions: version!(DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_TRANSACTIONS),
         list_transactions: version!(LIST_TRANSACTIONS, API_VERSION_LIST_TRANSACTIONS),
+        consumer_group_describe: version!(
+            CONSUMER_GROUP_DESCRIBE,
+            API_VERSION_CONSUMER_GROUP_DESCRIBE
+        ),
         list_config_resources: version!(LIST_CONFIG_RESOURCES, API_VERSION_LIST_CONFIG_RESOURCES),
+        describe_topic_partitions: version!(
+            DESCRIBE_TOPIC_PARTITIONS,
+            API_VERSION_DESCRIBE_TOPIC_PARTITIONS
+        ),
     }
 }
 
@@ -417,7 +430,9 @@ pub struct ApiVersions {
     pub describe_producers: i16,
     pub describe_transactions: i16,
     pub list_transactions: i16,
+    pub consumer_group_describe: i16,
     pub list_config_resources: i16,
+    pub describe_topic_partitions: i16,
 }
 
 impl Default for ApiVersions {
@@ -444,7 +459,9 @@ impl Default for ApiVersions {
             describe_producers: API_VERSION_DESCRIBE_PRODUCERS,
             describe_transactions: API_VERSION_DESCRIBE_TRANSACTIONS,
             list_transactions: API_VERSION_LIST_TRANSACTIONS,
+            consumer_group_describe: API_VERSION_CONSUMER_GROUP_DESCRIBE,
             list_config_resources: API_VERSION_LIST_CONFIG_RESOURCES,
+            describe_topic_partitions: API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
         }
     }
 }
@@ -604,7 +621,15 @@ mod tests {
         assert_eq!(v.describe_producers, API_VERSION_DESCRIBE_PRODUCERS);
         assert_eq!(v.describe_transactions, API_VERSION_DESCRIBE_TRANSACTIONS);
         assert_eq!(v.list_transactions, API_VERSION_LIST_TRANSACTIONS);
+        assert_eq!(
+            v.consumer_group_describe,
+            API_VERSION_CONSUMER_GROUP_DESCRIBE
+        );
         assert_eq!(v.list_config_resources, API_VERSION_LIST_CONFIG_RESOURCES);
+        assert_eq!(
+            v.describe_topic_partitions,
+            API_VERSION_DESCRIBE_TOPIC_PARTITIONS
+        );
     }
 
     #[test]
@@ -639,7 +664,9 @@ mod tests {
         assert_eq!(v.describe_producers, d.describe_producers);
         assert_eq!(v.describe_transactions, d.describe_transactions);
         assert_eq!(v.list_transactions, d.list_transactions);
+        assert_eq!(v.consumer_group_describe, d.consumer_group_describe);
         assert_eq!(v.list_config_resources, d.list_config_resources);
+        assert_eq!(v.describe_topic_partitions, d.describe_topic_partitions);
     }
 
     #[test]
@@ -729,8 +756,16 @@ mod tests {
             API_VERSION_LIST_TRANSACTIONS
         );
         assert_eq!(
+            ApiVersionCache::fallback_version(api_key::CONSUMER_GROUP_DESCRIBE),
+            API_VERSION_CONSUMER_GROUP_DESCRIBE
+        );
+        assert_eq!(
             ApiVersionCache::fallback_version(api_key::LIST_CONFIG_RESOURCES),
             API_VERSION_LIST_CONFIG_RESOURCES
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_TOPIC_PARTITIONS),
+            API_VERSION_DESCRIBE_TOPIC_PARTITIONS
         );
     }
 
