@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_OFFSETS,
+    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_GROUPS, API_VERSION_FETCH,
+    API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
     API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
 };
 use tracing::{debug, info};
@@ -25,7 +26,10 @@ pub mod api_key {
     pub const FIND_COORDINATOR: i16 = 10;
     pub const OFFSET_COMMIT: i16 = 8;
     pub const OFFSET_FETCH: i16 = 9;
+    pub const DESCRIBE_GROUPS: i16 = 15;
+    pub const LIST_GROUPS: i16 = 16;
     pub const API_VERSIONS: i16 = 18;
+    pub const DESCRIBE_CLUSTER: i16 = 60;
 }
 
 /// The version of the `ApiVersions` request we send.
@@ -218,6 +222,9 @@ impl ApiVersionCache {
             api_key::FIND_COORDINATOR => API_VERSION_FIND_COORDINATOR,
             api_key::OFFSET_COMMIT => API_VERSION_OFFSET_COMMIT,
             api_key::OFFSET_FETCH => API_VERSION_OFFSET_FETCH,
+            api_key::DESCRIBE_GROUPS => API_VERSION_DESCRIBE_GROUPS,
+            api_key::LIST_GROUPS => API_VERSION_LIST_GROUPS,
+            api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
             _ => 0,
         }
     }
@@ -268,6 +275,24 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             api_key::OFFSET_FETCH,
             API_VERSION_OFFSET_FETCH,
         ),
+        describe_groups: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_GROUPS,
+            API_VERSION_DESCRIBE_GROUPS,
+        ),
+        list_groups: resolve_api_version(
+            cache,
+            host,
+            api_key::LIST_GROUPS,
+            API_VERSION_LIST_GROUPS,
+        ),
+        describe_cluster: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_CLUSTER,
+            API_VERSION_DESCRIBE_CLUSTER,
+        ),
     }
 }
 
@@ -282,6 +307,9 @@ pub struct ApiVersions {
     pub find_coordinator: i16,
     pub offset_commit: i16,
     pub offset_fetch: i16,
+    pub describe_groups: i16,
+    pub list_groups: i16,
+    pub describe_cluster: i16,
 }
 
 impl Default for ApiVersions {
@@ -294,6 +322,9 @@ impl Default for ApiVersions {
             find_coordinator: API_VERSION_FIND_COORDINATOR,
             offset_commit: API_VERSION_OFFSET_COMMIT,
             offset_fetch: API_VERSION_OFFSET_FETCH,
+            describe_groups: API_VERSION_DESCRIBE_GROUPS,
+            list_groups: API_VERSION_LIST_GROUPS,
+            describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
         }
     }
 }
@@ -401,6 +432,9 @@ mod tests {
         assert_eq!(v.find_coordinator, API_VERSION_FIND_COORDINATOR);
         assert_eq!(v.offset_commit, API_VERSION_OFFSET_COMMIT);
         assert_eq!(v.offset_fetch, API_VERSION_OFFSET_FETCH);
+        assert_eq!(v.describe_groups, API_VERSION_DESCRIBE_GROUPS);
+        assert_eq!(v.list_groups, API_VERSION_LIST_GROUPS);
+        assert_eq!(v.describe_cluster, API_VERSION_DESCRIBE_CLUSTER);
     }
 
     #[test]
@@ -415,6 +449,9 @@ mod tests {
         assert_eq!(v.find_coordinator, d.find_coordinator);
         assert_eq!(v.offset_commit, d.offset_commit);
         assert_eq!(v.offset_fetch, d.offset_fetch);
+        assert_eq!(v.describe_groups, d.describe_groups);
+        assert_eq!(v.list_groups, d.list_groups);
+        assert_eq!(v.describe_cluster, d.describe_cluster);
     }
 
     #[test]
@@ -446,6 +483,18 @@ mod tests {
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::OFFSET_FETCH),
             API_VERSION_OFFSET_FETCH
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_GROUPS),
+            API_VERSION_DESCRIBE_GROUPS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::LIST_GROUPS),
+            API_VERSION_LIST_GROUPS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_CLUSTER),
+            API_VERSION_DESCRIBE_CLUSTER
         );
     }
 

@@ -126,7 +126,45 @@ tx.commit().unwrap();
 - `load_metadata_all`, `load_metadata`
 - `fetch_offsets`, `list_offsets`, `fetch_topic_offsets`
 
-### 4.2 Topic create/delete
+### 4.2 Cluster and group inspection
+
+```rust,no_run
+use rustfs_kafka::client::KafkaClient;
+
+let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
+
+let cluster = client.describe_cluster().unwrap();
+println!(
+    "cluster={} controller={} brokers={}",
+    cluster.cluster_id,
+    cluster.controller_id,
+    cluster.brokers.len()
+);
+
+let groups = client.list_groups().unwrap();
+for group in groups.groups {
+    println!(
+        "group={} protocol={} state={} type={}",
+        group.group_id,
+        group.protocol_type,
+        group.group_state,
+        group.group_type
+    );
+}
+
+let described = client.describe_groups(&["my-group"]).unwrap();
+for group in described.groups {
+    println!("group={} members={}", group.group_id, group.members.len());
+}
+```
+
+Optional variants expose the highest fields currently wired from `kafka-protocol`:
+
+- `describe_cluster_with_options(include_authorized_operations, include_fenced_brokers)`
+- `list_groups_with_filters(states_filter, types_filter)`
+- `describe_groups_with_options(groups, include_authorized_operations)`
+
+### 4.3 Topic create/delete
 
 ```rust,no_run
 use std::time::Duration;

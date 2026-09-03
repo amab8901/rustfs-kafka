@@ -3,6 +3,7 @@
 //! This module provides request builders, response converters, and internal
 //! data types for all supported Kafka APIs.
 
+pub mod admin;
 pub mod api_versions;
 pub mod consumer;
 pub mod create_topics;
@@ -30,6 +31,9 @@ pub const API_VERSION_LIST_OFFSETS: i16 = 1;
 pub const API_VERSION_OFFSET_COMMIT: i16 = 2;
 pub const API_VERSION_OFFSET_FETCH: i16 = 2;
 pub const API_VERSION_FIND_COORDINATOR: i16 = 3;
+pub const API_VERSION_DESCRIBE_GROUPS: i16 = 6;
+pub const API_VERSION_LIST_GROUPS: i16 = 5;
+pub const API_VERSION_DESCRIBE_CLUSTER: i16 = 2;
 
 /// Map our `Compression` to `kafka_protocol::records::Compression`.
 pub fn to_kp_compression(c: Compression) -> kafka_protocol::records::Compression {
@@ -164,6 +168,9 @@ fn test_api_version_constants_are_positive() {
         API_VERSION_OFFSET_COMMIT,
         API_VERSION_OFFSET_FETCH,
         API_VERSION_FIND_COORDINATOR,
+        API_VERSION_DESCRIBE_GROUPS,
+        API_VERSION_LIST_GROUPS,
+        API_VERSION_DESCRIBE_CLUSTER,
     ];
     assert!(versions.iter().all(|v| *v > 0));
 }

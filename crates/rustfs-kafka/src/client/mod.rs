@@ -11,6 +11,7 @@
 //! - **Metadata queries** via `load_metadata_all()` / `load_metadata()`
 //! - **Offset management** via `fetch_offsets()` / `commit_offsets()`
 //! - **Topic management** via `create_topics()` / `delete_topics()`
+//! - **Cluster and group inspection** via `describe_cluster()` / `list_groups()` / `describe_groups()`
 //!
 //! # Examples
 //!
@@ -45,6 +46,10 @@
 
 // pub re-exports
 pub use crate::compression::Compression;
+pub use crate::protocol::admin::{
+    ClusterBroker, DescribeClusterResponseData, DescribeGroupsResponseData, DescribedGroup,
+    DescribedGroupMember, ListGroupsResponseData, ListedGroup,
+};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
 pub use crate::protocol::delete_topics::{DeleteTopicResult, DeleteTopicsResponseData};
 #[cfg(feature = "producer_timestamp")]
@@ -727,6 +732,199 @@ impl KafkaClient {
             ) {
                 Ok(resp) => return Ok(resp),
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteTopics")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes the Kafka cluster, including cluster ID, controller ID, and brokers.
+    ///
+    /// The request is attempted against configured brokers until one succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_cluster(&mut self) -> Result<DescribeClusterResponseData> {
+        self.describe_cluster_with_options(false, false)
+    }
+
+    /// Describes the Kafka cluster with optional authorized-operation and fenced-broker fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_cluster_with_options(
+        &mut self,
+        include_authorized_operations: bool,
+        include_fenced_brokers: bool,
+    ) -> Result<DescribeClusterResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeCluster"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_cluster_request(
+                correlation_id,
+                &self.config.client_id,
+                include_authorized_operations,
+                include_fenced_brokers,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_CLUSTER,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeClusterResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_CLUSTER,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_cluster_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeCluster")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Lists consumer groups known to the contacted broker.
+    ///
+    /// The request is attempted against configured brokers until one succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn list_groups(&mut self) -> Result<ListGroupsResponseData> {
+        self.list_groups_with_filters(&[], &[])
+    }
+
+    /// Lists consumer groups filtered by group state and group type.
+    ///
+    /// Empty filters return all groups visible to the contacted broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn list_groups_with_filters(
+        &mut self,
+        states_filter: &[&str],
+        types_filter: &[&str],
+    ) -> Result<ListGroupsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ListGroups"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_list_groups_request(
+                correlation_id,
+                &self.config.client_id,
+                states_filter,
+                types_filter,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_LIST_GROUPS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::ListGroupsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_LIST_GROUPS,
+                )
+            }) {
+                Ok(resp) => return Ok(crate::protocol::admin::convert_list_groups_response(resp)),
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ListGroups")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes the supplied consumer groups.
+    ///
+    /// The request is attempted against configured brokers until one succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_groups(&mut self, groups: &[&str]) -> Result<DescribeGroupsResponseData> {
+        self.describe_groups_with_options(groups, false)
+    }
+
+    /// Describes the supplied consumer groups with optional authorized-operation fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_groups_with_options(
+        &mut self,
+        groups: &[&str],
+        include_authorized_operations: bool,
+    ) -> Result<DescribeGroupsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeGroups"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_groups_request(
+                correlation_id,
+                &self.config.client_id,
+                groups,
+                include_authorized_operations,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_GROUPS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeGroupsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_GROUPS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_groups_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeGroups")),
             }
         }
 

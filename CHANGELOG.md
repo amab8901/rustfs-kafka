@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Added read-only Kafka management APIs on `KafkaClient` using `kafka-protocol` generated messages:
+  - `describe_cluster` / `describe_cluster_with_options`
+  - `list_groups` / `list_groups_with_filters`
+  - `describe_groups` / `describe_groups_with_options`
+- Added public response data types for cluster brokers, listed groups, described groups, and described group members.
+
 ### Changed
 
 - Upgraded `kafka-protocol` from `0.17.0` to `0.18.0` and updated Produce record construction for the new
