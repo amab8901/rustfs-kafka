@@ -27,8 +27,9 @@ rustfs-kafka-async = "1.2.0"
 
 - Kafka client metadata, fetch, produce, offset commit, committed-offset deletion, API version, cluster/config,
   config-resource discovery, topic partition discovery, ACL inspection/mutation, delegation token, client quota, SCRAM
-  credential, broker log directory, KRaft quorum, partition reassignment, active producer, transaction, consumer group
-  deletion/inspection, and share group inspection APIs.
+  credential, broker log directory, KRaft quorum, partition reassignment query/mutation, partition expansion,
+  record deletion, leader election, leader-epoch offsets, active producer, transaction, consumer group deletion/inspection,
+  and share group inspection APIs.
 - High-level `Consumer` and `Producer` abstractions.
 - TLS support via rustls:
     - `security` (default, aws-lc-rs provider, `webpki-roots` trust store)

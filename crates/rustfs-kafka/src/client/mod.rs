@@ -61,14 +61,19 @@ pub use crate::protocol::admin::{
     ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
     ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclBinding, AclDescription,
-    AclResource, ActiveProducer, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
-    CLIENT_QUOTA_MATCH_EXACT, CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER,
-    CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
-    ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
-    ConsumerGroupAssignment, ConsumerGroupDescribeResponseData, ConsumerGroupDescription,
-    ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, CreateAclResult,
-    CreateAclsResponseData, DelegationTokenDescription, DeleteAclsFilterResult,
-    DeleteAclsResponseData, DeleteGroupsResponseData, DeletedAcl, DeletedGroup, DescribeAclsFilter,
+    AclResource, ActiveProducer, AlterPartitionReassignmentsOptions,
+    AlterPartitionReassignmentsPartitionResult, AlterPartitionReassignmentsResponseData,
+    AlterPartitionReassignmentsTopicResult, CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
+    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, CONFIG_RESOURCE_TYPE_BROKER,
+    CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaEntity,
+    ClientQuotaEntityFilter, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
+    ConfigResource, ConfigSynonym, ConsumerGroupAssignment, ConsumerGroupDescribeResponseData,
+    ConsumerGroupDescription, ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions,
+    CreateAclResult, CreateAclsResponseData, CreatePartitionsOptions, CreatePartitionsResponseData,
+    CreatePartitionsTopicResult, CreatePartitionsTopicSpec, DelegationTokenDescription,
+    DeleteAclsFilterResult, DeleteAclsResponseData, DeleteGroupsResponseData,
+    DeleteRecordsPartitionResult, DeleteRecordsPartitionSpec, DeleteRecordsResponseData,
+    DeleteRecordsTopicResult, DeleteRecordsTopicSpec, DeletedAcl, DeletedGroup, DescribeAclsFilter,
     DescribeAclsResponseData, DescribeClientQuotasOptions, DescribeClientQuotasResponseData,
     DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
     DescribeDelegationTokenResponseData, DescribeGroupsResponseData, DescribeLogDirsResponseData,
@@ -76,12 +81,16 @@ pub use crate::protocol::admin::{
     DescribeShareGroupOffsetsResponseData, DescribeTopicPartitionsOptions,
     DescribeTopicPartitionsResponseData, DescribeTransactionsResponseData,
     DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
-    DescribedTopicPartition, DescribedTopicPartitionsTopic, DescribedTransaction, KafkaPrincipal,
-    ListConfigResourcesResponseData, ListGroupsResponseData,
+    DescribedTopicPartition, DescribedTopicPartitionsTopic, DescribedTransaction,
+    ELECTION_TYPE_PREFERRED, ELECTION_TYPE_UNCLEAN, ElectLeadersOptions,
+    ElectLeadersPartitionResult, ElectLeadersResponseData, ElectLeadersTopicResult, KafkaPrincipal,
+    LeaderEpochPartitionOffset, LeaderEpochPartitionRequest, LeaderEpochTopicOffsets,
+    LeaderEpochTopicRequest, ListConfigResourcesResponseData, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
     ListedConfigResource, ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition,
     LogDirTopic, OffsetDeletePartitionResult, OffsetDeleteResponseData, OffsetDeleteTopicResult,
-    PartitionReassignment, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
+    OffsetForLeaderEpochResponseData, PartitionReassignment, PartitionReassignmentSpec,
+    PartitionReassignmentTopicSpec, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
     QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
     SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, ShareGroupAssignment,
     ShareGroupDescribeResponseData, ShareGroupDescription, ShareGroupMemberDescription,
@@ -1255,6 +1264,65 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Deletes records before the supplied offsets for selected topic partitions.
+    ///
+    /// Kafka keeps the partitions and offsets; this advances the partition low watermark
+    /// so records before each requested offset are no longer readable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is too large, brokers are unreachable, or the
+    /// broker response cannot be decoded.
+    pub fn delete_records(
+        &mut self,
+        topics: &[DeleteRecordsTopicSpec],
+        timeout: Duration,
+    ) -> Result<DeleteRecordsResponseData> {
+        let timeout_ms = crate::protocol::to_millis_i32(timeout)?;
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DeleteRecords"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_delete_records_request(
+                correlation_id,
+                &self.config.client_id,
+                topics,
+                timeout_ms,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DELETE_RECORDS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DeleteRecordsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DELETE_RECORDS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_delete_records_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteRecords")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Lists all ongoing partition reassignments visible to the contacted broker.
     ///
     /// # Errors
@@ -1337,6 +1405,68 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Alters or cancels partition reassignments.
+    ///
+    /// Use `PartitionReassignmentSpec::new` to assign a new replica set and
+    /// `PartitionReassignmentSpec::cancel` to cancel an active reassignment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn alter_partition_reassignments(
+        &mut self,
+        options: &AlterPartitionReassignmentsOptions,
+    ) -> Result<AlterPartitionReassignmentsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterPartitionReassignments"));
+                    continue;
+                }
+            };
+
+            let (header, request) =
+                crate::protocol::admin::build_alter_partition_reassignments_request(
+                    correlation_id,
+                    &self.config.client_id,
+                    options,
+                );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::AlterPartitionReassignmentsResponse,
+                >(
+                    conn,
+                    crate::protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_alter_partition_reassignments_response(
+                            resp,
+                        ),
+                    );
+                }
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AlterPartitionReassignments"));
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Describes `KRaft` quorum state for selected topic partitions.
     ///
     /// # Errors
@@ -1387,6 +1517,91 @@ impl KafkaClient {
         }
 
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Elects leaders using the supplied Kafka election type and partition scope.
+    ///
+    /// Use `ElectLeadersOptions::all_partitions` to ask the broker to elect leaders
+    /// for all eligible partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn elect_leaders(
+        &mut self,
+        options: &ElectLeadersOptions,
+    ) -> Result<ElectLeadersResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ElectLeaders"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_elect_leaders_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_ELECT_LEADERS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::ElectLeadersResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_ELECT_LEADERS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_elect_leaders_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ElectLeaders")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Elects preferred leaders for selected topic partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is too large, brokers are unreachable, or the
+    /// broker response cannot be decoded.
+    pub fn elect_preferred_leaders(
+        &mut self,
+        topics: &[TopicPartitionFilter],
+        timeout: Duration,
+    ) -> Result<ElectLeadersResponseData> {
+        let options = ElectLeadersOptions::new(ELECTION_TYPE_PREFERRED, topics.iter().cloned())
+            .with_timeout_ms(crate::protocol::to_millis_i32(timeout)?);
+        self.elect_leaders(&options)
+    }
+
+    /// Elects unclean leaders for selected topic partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is too large, brokers are unreachable, or the
+    /// broker response cannot be decoded.
+    pub fn elect_unclean_leaders(
+        &mut self,
+        topics: &[TopicPartitionFilter],
+        timeout: Duration,
+    ) -> Result<ElectLeadersResponseData> {
+        let options = ElectLeadersOptions::new(ELECTION_TYPE_UNCLEAN, topics.iter().cloned())
+            .with_timeout_ms(crate::protocol::to_millis_i32(timeout)?);
+        self.elect_leaders(&options)
     }
 
     /// Lists config resources for the broker's default supported resource types.
@@ -1444,6 +1659,71 @@ impl KafkaClient {
                     );
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ListConfigResources")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Expands partition counts for one or more topics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn create_partitions(
+        &mut self,
+        topics: &[CreatePartitionsTopicSpec],
+    ) -> Result<CreatePartitionsResponseData> {
+        let options = CreatePartitionsOptions::new(topics.iter().cloned());
+        self.create_partitions_with_options(&options)
+    }
+
+    /// Expands partition counts using timeout, validation, and assignment options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn create_partitions_with_options(
+        &mut self,
+        options: &CreatePartitionsOptions,
+    ) -> Result<CreatePartitionsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "CreatePartitions"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_create_partitions_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_CREATE_PARTITIONS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::CreatePartitionsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_CREATE_PARTITIONS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_create_partitions_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "CreatePartitions")),
             }
         }
 
@@ -1706,6 +1986,57 @@ impl KafkaClient {
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeProducers")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Looks up end offsets for specific topic-partition leader epochs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn offsets_for_leader_epochs(
+        &mut self,
+        topics: &[LeaderEpochTopicRequest],
+    ) -> Result<OffsetForLeaderEpochResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "OffsetForLeaderEpoch"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_offset_for_leader_epoch_request(
+                correlation_id,
+                &self.config.client_id,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::OffsetForLeaderEpochResponse,
+                >(conn, crate::protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH)
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_offset_for_leader_epoch_response(resp),
+                    );
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "OffsetForLeaderEpoch")),
             }
         }
 

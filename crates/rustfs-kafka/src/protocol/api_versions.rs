@@ -8,18 +8,19 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_DELETE_ACLS,
-    API_VERSION_DELETE_GROUPS, API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS,
-    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_CONSUMER_GROUP_DESCRIBE,
+    API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
+    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DESCRIBE_ACLS,
+    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
     API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
     API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-    API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_CONFIG_RESOURCES,
-    API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-    API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
-    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
-    API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_ELECT_LEADERS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
+    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA,
+    API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH,
+    API_VERSION_OFFSET_FOR_LEADER_EPOCH, API_VERSION_PRODUCE, API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 use tracing::{debug, info};
 
@@ -32,19 +33,24 @@ pub mod api_key {
     pub const FETCH: i16 = 1;
     pub const LIST_OFFSETS: i16 = 2;
     pub const METADATA: i16 = 3;
-    pub const FIND_COORDINATOR: i16 = 10;
     pub const OFFSET_COMMIT: i16 = 8;
     pub const OFFSET_FETCH: i16 = 9;
+    pub const FIND_COORDINATOR: i16 = 10;
     pub const DESCRIBE_GROUPS: i16 = 15;
     pub const LIST_GROUPS: i16 = 16;
     pub const API_VERSIONS: i16 = 18;
+    pub const DELETE_RECORDS: i16 = 21;
+    pub const OFFSET_FOR_LEADER_EPOCH: i16 = 23;
     pub const DESCRIBE_ACLS: i16 = 29;
     pub const CREATE_ACLS: i16 = 30;
     pub const DELETE_ACLS: i16 = 31;
     pub const DESCRIBE_CONFIGS: i16 = 32;
     pub const DESCRIBE_LOG_DIRS: i16 = 35;
+    pub const CREATE_PARTITIONS: i16 = 37;
     pub const DESCRIBE_DELEGATION_TOKEN: i16 = 41;
     pub const DELETE_GROUPS: i16 = 42;
+    pub const ELECT_LEADERS: i16 = 43;
+    pub const ALTER_PARTITION_REASSIGNMENTS: i16 = 45;
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
     pub const OFFSET_DELETE: i16 = 47;
     pub const DESCRIBE_CLIENT_QUOTAS: i16 = 48;
@@ -323,6 +329,8 @@ impl ApiVersionCache {
             api_key::FIND_COORDINATOR => API_VERSION_FIND_COORDINATOR,
             api_key::OFFSET_COMMIT => API_VERSION_OFFSET_COMMIT,
             api_key::OFFSET_FETCH => API_VERSION_OFFSET_FETCH,
+            api_key::DELETE_RECORDS => API_VERSION_DELETE_RECORDS,
+            api_key::OFFSET_FOR_LEADER_EPOCH => API_VERSION_OFFSET_FOR_LEADER_EPOCH,
             api_key::DESCRIBE_GROUPS => API_VERSION_DESCRIBE_GROUPS,
             api_key::LIST_GROUPS => API_VERSION_LIST_GROUPS,
             api_key::DESCRIBE_ACLS => API_VERSION_DESCRIBE_ACLS,
@@ -330,8 +338,11 @@ impl ApiVersionCache {
             api_key::DELETE_ACLS => API_VERSION_DELETE_ACLS,
             api_key::DESCRIBE_CONFIGS => API_VERSION_DESCRIBE_CONFIGS,
             api_key::DESCRIBE_LOG_DIRS => API_VERSION_DESCRIBE_LOG_DIRS,
+            api_key::CREATE_PARTITIONS => API_VERSION_CREATE_PARTITIONS,
             api_key::DESCRIBE_DELEGATION_TOKEN => API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             api_key::DELETE_GROUPS => API_VERSION_DELETE_GROUPS,
+            api_key::ELECT_LEADERS => API_VERSION_ELECT_LEADERS,
+            api_key::ALTER_PARTITION_REASSIGNMENTS => API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             api_key::OFFSET_DELETE => API_VERSION_OFFSET_DELETE,
             api_key::DESCRIBE_CLIENT_QUOTAS => API_VERSION_DESCRIBE_CLIENT_QUOTAS,
@@ -382,6 +393,11 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
         find_coordinator: version!(FIND_COORDINATOR, API_VERSION_FIND_COORDINATOR),
         offset_commit: version!(OFFSET_COMMIT, API_VERSION_OFFSET_COMMIT),
         offset_fetch: version!(OFFSET_FETCH, API_VERSION_OFFSET_FETCH),
+        delete_records: version!(DELETE_RECORDS, API_VERSION_DELETE_RECORDS),
+        offset_for_leader_epoch: version!(
+            OFFSET_FOR_LEADER_EPOCH,
+            API_VERSION_OFFSET_FOR_LEADER_EPOCH
+        ),
         describe_groups: version!(DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS),
         list_groups: version!(LIST_GROUPS, API_VERSION_LIST_GROUPS),
         describe_acls: version!(DESCRIBE_ACLS, API_VERSION_DESCRIBE_ACLS),
@@ -389,11 +405,17 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
         delete_acls: version!(DELETE_ACLS, API_VERSION_DELETE_ACLS),
         describe_configs: version!(DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
         describe_log_dirs: version!(DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
+        create_partitions: version!(CREATE_PARTITIONS, API_VERSION_CREATE_PARTITIONS),
         describe_delegation_token: version!(
             DESCRIBE_DELEGATION_TOKEN,
             API_VERSION_DESCRIBE_DELEGATION_TOKEN
         ),
         delete_groups: version!(DELETE_GROUPS, API_VERSION_DELETE_GROUPS),
+        elect_leaders: version!(ELECT_LEADERS, API_VERSION_ELECT_LEADERS),
+        alter_partition_reassignments: version!(
+            ALTER_PARTITION_REASSIGNMENTS,
+            API_VERSION_ALTER_PARTITION_REASSIGNMENTS
+        ),
         list_partition_reassignments: version!(
             LIST_PARTITION_REASSIGNMENTS,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
@@ -440,6 +462,8 @@ pub struct ApiVersions {
     pub find_coordinator: i16,
     pub offset_commit: i16,
     pub offset_fetch: i16,
+    pub delete_records: i16,
+    pub offset_for_leader_epoch: i16,
     pub describe_groups: i16,
     pub list_groups: i16,
     pub describe_acls: i16,
@@ -447,8 +471,11 @@ pub struct ApiVersions {
     pub delete_acls: i16,
     pub describe_configs: i16,
     pub describe_log_dirs: i16,
+    pub create_partitions: i16,
     pub describe_delegation_token: i16,
     pub delete_groups: i16,
+    pub elect_leaders: i16,
+    pub alter_partition_reassignments: i16,
     pub list_partition_reassignments: i16,
     pub offset_delete: i16,
     pub describe_client_quotas: i16,
@@ -475,6 +502,8 @@ impl Default for ApiVersions {
             find_coordinator: API_VERSION_FIND_COORDINATOR,
             offset_commit: API_VERSION_OFFSET_COMMIT,
             offset_fetch: API_VERSION_OFFSET_FETCH,
+            delete_records: API_VERSION_DELETE_RECORDS,
+            offset_for_leader_epoch: API_VERSION_OFFSET_FOR_LEADER_EPOCH,
             describe_groups: API_VERSION_DESCRIBE_GROUPS,
             list_groups: API_VERSION_LIST_GROUPS,
             describe_acls: API_VERSION_DESCRIBE_ACLS,
@@ -482,8 +511,11 @@ impl Default for ApiVersions {
             delete_acls: API_VERSION_DELETE_ACLS,
             describe_configs: API_VERSION_DESCRIBE_CONFIGS,
             describe_log_dirs: API_VERSION_DESCRIBE_LOG_DIRS,
+            create_partitions: API_VERSION_CREATE_PARTITIONS,
             describe_delegation_token: API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             delete_groups: API_VERSION_DELETE_GROUPS,
+            elect_leaders: API_VERSION_ELECT_LEADERS,
+            alter_partition_reassignments: API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             offset_delete: API_VERSION_OFFSET_DELETE,
             describe_client_quotas: API_VERSION_DESCRIBE_CLIENT_QUOTAS,
@@ -634,6 +666,11 @@ mod tests {
         assert_eq!(v.find_coordinator, API_VERSION_FIND_COORDINATOR);
         assert_eq!(v.offset_commit, API_VERSION_OFFSET_COMMIT);
         assert_eq!(v.offset_fetch, API_VERSION_OFFSET_FETCH);
+        assert_eq!(v.delete_records, API_VERSION_DELETE_RECORDS);
+        assert_eq!(
+            v.offset_for_leader_epoch,
+            API_VERSION_OFFSET_FOR_LEADER_EPOCH
+        );
         assert_eq!(v.describe_groups, API_VERSION_DESCRIBE_GROUPS);
         assert_eq!(v.list_groups, API_VERSION_LIST_GROUPS);
         assert_eq!(v.describe_acls, API_VERSION_DESCRIBE_ACLS);
@@ -641,11 +678,17 @@ mod tests {
         assert_eq!(v.delete_acls, API_VERSION_DELETE_ACLS);
         assert_eq!(v.describe_configs, API_VERSION_DESCRIBE_CONFIGS);
         assert_eq!(v.describe_log_dirs, API_VERSION_DESCRIBE_LOG_DIRS);
+        assert_eq!(v.create_partitions, API_VERSION_CREATE_PARTITIONS);
         assert_eq!(
             v.describe_delegation_token,
             API_VERSION_DESCRIBE_DELEGATION_TOKEN
         );
         assert_eq!(v.delete_groups, API_VERSION_DELETE_GROUPS);
+        assert_eq!(v.elect_leaders, API_VERSION_ELECT_LEADERS);
+        assert_eq!(
+            v.alter_partition_reassignments,
+            API_VERSION_ALTER_PARTITION_REASSIGNMENTS
+        );
         assert_eq!(
             v.list_partition_reassignments,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
@@ -689,6 +732,8 @@ mod tests {
         assert_eq!(v.find_coordinator, d.find_coordinator);
         assert_eq!(v.offset_commit, d.offset_commit);
         assert_eq!(v.offset_fetch, d.offset_fetch);
+        assert_eq!(v.delete_records, d.delete_records);
+        assert_eq!(v.offset_for_leader_epoch, d.offset_for_leader_epoch);
         assert_eq!(v.describe_groups, d.describe_groups);
         assert_eq!(v.list_groups, d.list_groups);
         assert_eq!(v.describe_acls, d.describe_acls);
@@ -696,8 +741,14 @@ mod tests {
         assert_eq!(v.delete_acls, d.delete_acls);
         assert_eq!(v.describe_configs, d.describe_configs);
         assert_eq!(v.describe_log_dirs, d.describe_log_dirs);
+        assert_eq!(v.create_partitions, d.create_partitions);
         assert_eq!(v.describe_delegation_token, d.describe_delegation_token);
         assert_eq!(v.delete_groups, d.delete_groups);
+        assert_eq!(v.elect_leaders, d.elect_leaders);
+        assert_eq!(
+            v.alter_partition_reassignments,
+            d.alter_partition_reassignments
+        );
         assert_eq!(
             v.list_partition_reassignments,
             d.list_partition_reassignments
@@ -733,6 +784,11 @@ mod tests {
             (api_key::FIND_COORDINATOR, API_VERSION_FIND_COORDINATOR),
             (api_key::OFFSET_COMMIT, API_VERSION_OFFSET_COMMIT),
             (api_key::OFFSET_FETCH, API_VERSION_OFFSET_FETCH),
+            (api_key::DELETE_RECORDS, API_VERSION_DELETE_RECORDS),
+            (
+                api_key::OFFSET_FOR_LEADER_EPOCH,
+                API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+            ),
             (api_key::DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS),
             (api_key::LIST_GROUPS, API_VERSION_LIST_GROUPS),
             (api_key::DESCRIBE_ACLS, API_VERSION_DESCRIBE_ACLS),
@@ -740,11 +796,17 @@ mod tests {
             (api_key::DELETE_ACLS, API_VERSION_DELETE_ACLS),
             (api_key::DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
             (api_key::DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
+            (api_key::CREATE_PARTITIONS, API_VERSION_CREATE_PARTITIONS),
             (
                 api_key::DESCRIBE_DELEGATION_TOKEN,
                 API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             ),
             (api_key::DELETE_GROUPS, API_VERSION_DELETE_GROUPS),
+            (api_key::ELECT_LEADERS, API_VERSION_ELECT_LEADERS),
+            (
+                api_key::ALTER_PARTITION_REASSIGNMENTS,
+                API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+            ),
             (
                 api_key::LIST_PARTITION_REASSIGNMENTS,
                 API_VERSION_LIST_PARTITION_REASSIGNMENTS,

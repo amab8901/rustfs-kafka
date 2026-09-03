@@ -15,9 +15,9 @@ Source checked:
 ## Coverage Summary
 
 - Total `kafka-protocol` API keys: 87.
-- Public or high-level runtime coverage: 33 APIs.
+- Public or high-level runtime coverage: 38 APIs.
 - Internal runtime coverage without direct public API: 10 APIs.
-- Client-facing backlog: 15 APIs.
+- Client-facing backlog: 10 APIs.
 - Advanced runtime backlog: 10 APIs.
 - Broker/controller/internal backlog: 19 APIs.
 
@@ -42,9 +42,9 @@ Source checked:
 | 18 | ApiVersions | Public admin/runtime implemented | Done. |
 | 19 | CreateTopics | Public admin implemented | Candidate: migrate manual codec to generated `kafka-protocol` request/response. |
 | 20 | DeleteTopics | Public admin implemented | Candidate: migrate manual codec to generated `kafka-protocol` request/response. |
-| 21 | DeleteRecords | Missing client-facing admin API | Add public delete-records helper for truncating partitions to offsets. |
+| 21 | DeleteRecords | Public admin implemented | Done. |
 | 22 | InitProducerId | Internal transactional producer runtime implemented | Keep internal; extend only through transaction producer API. |
-| 23 | OffsetForLeaderEpoch | Missing client-facing diagnostic API | Add public leader-epoch offset lookup helper. |
+| 23 | OffsetForLeaderEpoch | Public diagnostic implemented | Done. |
 | 24 | AddPartitionsToTxn | Internal transactional producer runtime implemented | Keep internal. |
 | 25 | AddOffsetsToTxn | Missing advanced transaction runtime API | Add when transactional offset commit workflow is implemented. |
 | 26 | EndTxn | Internal transactional producer runtime implemented | Keep internal. |
@@ -58,15 +58,15 @@ Source checked:
 | 34 | AlterReplicaLogDirs | Missing client-facing admin API | Add advanced broker storage reassignment helper. |
 | 35 | DescribeLogDirs | Public admin implemented | Done. |
 | 36 | SaslAuthenticate | Internal auth runtime implemented | Keep internal auth flow. |
-| 37 | CreatePartitions | Missing client-facing admin API | Add public partition expansion helper. |
+| 37 | CreatePartitions | Public admin implemented | Done. |
 | 38 | CreateDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
 | 39 | RenewDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
 | 40 | ExpireDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
 | 41 | DescribeDelegationToken | Public admin implemented | Done. |
 | 42 | DeleteGroups | Public admin implemented | Done. |
-| 43 | ElectLeaders | Missing client-facing admin API | Add public preferred/unclean leader election helper. |
+| 43 | ElectLeaders | Public admin implemented | Done. |
 | 44 | IncrementalAlterConfigs | Missing client-facing admin API | Add preferred config mutation helper. |
-| 45 | AlterPartitionReassignments | Missing client-facing admin API | Add public partition reassignment mutation helper. |
+| 45 | AlterPartitionReassignments | Public admin implemented | Done. |
 | 46 | ListPartitionReassignments | Public admin implemented | Done. |
 | 47 | OffsetDelete | Public admin implemented | Done. |
 | 48 | DescribeClientQuotas | Public admin implemented | Done. |
@@ -115,11 +115,10 @@ Source checked:
 
 ## Recommended Implementation Batches
 
-1. Topic/partition maintenance: `CreatePartitions`, `DeleteRecords`, `ElectLeaders`, `AlterPartitionReassignments`.
-2. Config and quota mutation: `IncrementalAlterConfigs`, `AlterClientQuotas`, possibly legacy `AlterConfigs`.
-3. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
-4. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
-5. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
-6. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
-7. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
+1. Config and quota mutation: `IncrementalAlterConfigs`, `AlterClientQuotas`, possibly legacy `AlterConfigs`.
+2. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
+3. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
+4. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
+5. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
+6. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
    `RemoveRaftVoter`, `UpdateRaftVoter`, `UnregisterBroker`.

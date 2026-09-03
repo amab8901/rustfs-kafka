@@ -131,8 +131,12 @@ tx.commit().unwrap();
 ```rust,no_run
 use std::time::Duration;
 use rustfs_kafka::client::{
-    AclBinding, ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
-    DescribeTopicPartitionsOptions, KafkaClient, KafkaPrincipal, ListTransactionsOptions,
+    AclBinding, AlterPartitionReassignmentsOptions, ClientQuotaEntityFilter, ConfigResource,
+    CreatePartitionsOptions, CreatePartitionsTopicSpec, DeleteRecordsPartitionSpec,
+    DeleteRecordsTopicSpec, DescribeAclsFilter, DescribeClientQuotasOptions,
+    DescribeTopicPartitionsOptions, KafkaClient, KafkaPrincipal, LeaderEpochPartitionRequest,
+    LeaderEpochTopicRequest, ListTransactionsOptions, PartitionReassignmentSpec,
+    PartitionReassignmentTopicSpec,
     ShareGroupOffsetRequest, TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ,
     ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
     CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_TOPIC,
@@ -263,6 +267,27 @@ for resource in config_resources.resources {
 
 let partitions = [TopicPartitionFilter::new("my-topic", [0, 1])];
 
+let expanded_partitions = client
+    .create_partitions_with_options(
+        &CreatePartitionsOptions::new([CreatePartitionsTopicSpec::new("my-topic", 6)])
+            .with_validate_only(true),
+    )
+    .unwrap();
+println!("partition_expansion_results={}", expanded_partitions.results.len());
+
+let deleted_records = client
+    .delete_records(
+        &[DeleteRecordsTopicSpec::new(
+            "my-topic",
+            [DeleteRecordsPartitionSpec::new(0, 42)],
+        )],
+        Duration::from_secs(10),
+    )
+    .unwrap();
+for topic in deleted_records.topics {
+    println!("deleted_records_topic={} partitions={}", topic.name, topic.partitions.len());
+}
+
 let deleted_offsets = client
     .delete_group_offsets("old-group", &partitions)
     .unwrap();
@@ -287,10 +312,41 @@ for topic in reassignments.topics {
     println!("topic={} reassignments={}", topic.name, topic.partitions.len());
 }
 
+let reassignment_update = client
+    .alter_partition_reassignments(
+        &AlterPartitionReassignmentsOptions::new([
+            PartitionReassignmentTopicSpec::new(
+                "my-topic",
+                [PartitionReassignmentSpec::new(0, [1, 2])],
+            ),
+        ])
+        .with_allow_replication_factor_change(false),
+    )
+    .unwrap();
+println!(
+    "reassignment_update_results={}",
+    reassignment_update.responses.len()
+);
+
+let election = client
+    .elect_preferred_leaders(&partitions, Duration::from_secs(10))
+    .unwrap();
+println!("leader_election_topics={}", election.replica_election_results.len());
+
 let metadata_quorum = [TopicPartitionFilter::new("cluster-metadata", [0])];
 let quorum = client.describe_quorum(&metadata_quorum).unwrap();
 for topic in quorum.topics {
     println!("quorum_topic={} partitions={}", topic.name, topic.partitions.len());
+}
+
+let leader_epoch_offsets = client
+    .offsets_for_leader_epochs(&[LeaderEpochTopicRequest::new(
+        "my-topic",
+        [LeaderEpochPartitionRequest::new(0, -1, 7)],
+    )])
+    .unwrap();
+for topic in leader_epoch_offsets.topics {
+    println!("leader_epoch_topic={} partitions={}", topic.topic, topic.partitions.len());
 }
 
 let tokens = client
@@ -369,10 +425,17 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
 - `list_config_resources_for(resource_types)`
 - `describe_delegation_tokens_for(owners)`
+- `create_partitions_with_options(options)`
+- `delete_records(topics, timeout)`
 - `describe_log_dirs_for(topic_partition_filters)`
 - `delete_group_offsets(group, topic_partition_filters)`
+- `alter_partition_reassignments(options)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
+- `elect_leaders(options)`
+- `elect_preferred_leaders(topic_partition_filters, timeout)`
+- `elect_unclean_leaders(topic_partition_filters, timeout)`
 - `describe_quorum(topic_partition_filters)`
+- `offsets_for_leader_epochs(topics)`
 - `describe_client_quotas_with_options(options)`
 - `describe_user_scram_credentials_for(users)`
 - `list_transactions_with_options(options)`

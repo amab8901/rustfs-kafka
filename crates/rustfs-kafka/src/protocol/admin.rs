@@ -2,9 +2,11 @@
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    ApiKey, ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse, CreateAclsRequest,
-    CreateAclsResponse, DeleteAclsRequest, DeleteAclsResponse, DeleteGroupsRequest,
-    DeleteGroupsResponse, DescribeAclsRequest, DescribeAclsResponse, DescribeClientQuotasRequest,
+    AlterPartitionReassignmentsRequest, AlterPartitionReassignmentsResponse, ApiKey,
+    ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse, CreateAclsRequest,
+    CreateAclsResponse, CreatePartitionsRequest, CreatePartitionsResponse, DeleteAclsRequest,
+    DeleteAclsResponse, DeleteGroupsRequest, DeleteGroupsResponse, DeleteRecordsRequest,
+    DeleteRecordsResponse, DescribeAclsRequest, DescribeAclsResponse, DescribeClientQuotasRequest,
     DescribeClientQuotasResponse, DescribeClusterRequest, DescribeClusterResponse,
     DescribeConfigsRequest, DescribeConfigsResponse, DescribeDelegationTokenRequest,
     DescribeDelegationTokenResponse, DescribeGroupsRequest, DescribeGroupsResponse,
@@ -13,25 +15,28 @@ use kafka_protocol::messages::{
     DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
     DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse, DescribeTransactionsRequest,
     DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
-    DescribeUserScramCredentialsResponse, GroupId, ListConfigResourcesRequest,
-    ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
+    DescribeUserScramCredentialsResponse, ElectLeadersRequest, ElectLeadersResponse, GroupId,
+    ListConfigResourcesRequest, ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
     ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
-    ListTransactionsResponse, OffsetDeleteRequest, OffsetDeleteResponse, RequestHeader,
+    ListTransactionsResponse, OffsetDeleteRequest, OffsetDeleteResponse,
+    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, RequestHeader,
     ShareGroupDescribeRequest, ShareGroupDescribeResponse,
 };
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
-    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_DELETE_ACLS,
-    API_VERSION_DELETE_GROUPS, API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS,
-    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_CONSUMER_GROUP_DESCRIBE,
+    API_VERSION_CREATE_ACLS, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
+    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DESCRIBE_ACLS,
+    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
     API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
     API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
+    API_VERSION_ELECT_LEADERS, API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
     API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
-    API_VERSION_OFFSET_DELETE, API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+    API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -43,6 +48,11 @@ pub const CONFIG_RESOURCE_TYPE_TOPIC: i8 = 2;
 pub const CONFIG_RESOURCE_TYPE_BROKER: i8 = 4;
 /// Broker logger config resource type for `DescribeConfigs`.
 pub const CONFIG_RESOURCE_TYPE_BROKER_LOGGER: i8 = 8;
+
+/// Preferred replica leader election.
+pub const ELECTION_TYPE_PREFERRED: i8 = 0;
+/// Unclean leader election.
+pub const ELECTION_TYPE_UNCLEAN: i8 = 1;
 
 /// Match any ACL resource type.
 pub const ACL_RESOURCE_TYPE_ANY: i8 = 1;
@@ -189,6 +199,458 @@ impl TopicPartitionFilter {
             partitions: partitions.into_iter().collect(),
         }
     }
+}
+
+/// Partition count expansion for one topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatePartitionsTopicSpec {
+    /// Topic name.
+    pub topic: String,
+    /// Desired total partition count after expansion.
+    pub count: i32,
+    /// Optional explicit replica assignments for the newly created partitions.
+    pub assignments: Option<Vec<Vec<i32>>>,
+}
+
+impl CreatePartitionsTopicSpec {
+    /// Create a partition expansion spec without explicit broker assignments.
+    #[must_use]
+    pub fn new(topic: impl Into<String>, count: i32) -> Self {
+        Self {
+            topic: topic.into(),
+            count,
+            assignments: None,
+        }
+    }
+
+    /// Attach explicit broker assignments for the new partitions.
+    #[must_use]
+    pub fn with_assignments<I, J>(mut self, assignments: I) -> Self
+    where
+        I: IntoIterator<Item = J>,
+        J: IntoIterator<Item = i32>,
+    {
+        self.assignments = Some(
+            assignments
+                .into_iter()
+                .map(|assignment| assignment.into_iter().collect())
+                .collect(),
+        );
+        self
+    }
+}
+
+/// Options for a `CreatePartitions` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatePartitionsOptions {
+    /// Topic partition expansions to request.
+    pub topics: Vec<CreatePartitionsTopicSpec>,
+    /// Timeout in milliseconds.
+    pub timeout_ms: i32,
+    /// Validate the request without applying it.
+    pub validate_only: bool,
+}
+
+impl CreatePartitionsOptions {
+    /// Create options with the supplied topic partition expansions.
+    #[must_use]
+    pub fn new<I>(topics: I) -> Self
+    where
+        I: IntoIterator<Item = CreatePartitionsTopicSpec>,
+    {
+        Self {
+            topics: topics.into_iter().collect(),
+            timeout_ms: 60_000,
+            validate_only: false,
+        }
+    }
+
+    /// Set the broker-side timeout in milliseconds.
+    #[must_use]
+    pub fn with_timeout_ms(mut self, timeout_ms: i32) -> Self {
+        self.timeout_ms = timeout_ms;
+        self
+    }
+
+    /// Validate the request without applying it.
+    #[must_use]
+    pub fn with_validate_only(mut self, validate_only: bool) -> Self {
+        self.validate_only = validate_only;
+        self
+    }
+}
+
+/// Result of one topic in a `CreatePartitions` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatePartitionsTopicResult {
+    /// Topic name.
+    pub name: String,
+    /// Per-topic broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Parsed response from a `CreatePartitions` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatePartitionsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-topic partition creation results returned by the broker.
+    pub results: Vec<CreatePartitionsTopicResult>,
+}
+
+/// A partition and high-watermark offset used by `DeleteRecords`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteRecordsPartitionSpec {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Delete records before this offset.
+    pub offset: i64,
+}
+
+impl DeleteRecordsPartitionSpec {
+    /// Create a delete-records partition spec.
+    #[must_use]
+    pub fn new(partition_index: i32, offset: i64) -> Self {
+        Self {
+            partition_index,
+            offset,
+        }
+    }
+}
+
+/// Per-topic delete-records request spec.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteRecordsTopicSpec {
+    /// Topic name.
+    pub topic: String,
+    /// Partition offsets to truncate to.
+    pub partitions: Vec<DeleteRecordsPartitionSpec>,
+}
+
+impl DeleteRecordsTopicSpec {
+    /// Create a delete-records topic spec.
+    #[must_use]
+    pub fn new<I>(topic: impl Into<String>, partitions: I) -> Self
+    where
+        I: IntoIterator<Item = DeleteRecordsPartitionSpec>,
+    {
+        Self {
+            topic: topic.into(),
+            partitions: partitions.into_iter().collect(),
+        }
+    }
+}
+
+/// Per-partition result returned by `DeleteRecords`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteRecordsPartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Partition low watermark after deletion.
+    pub low_watermark: i64,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+}
+
+/// Per-topic result returned by `DeleteRecords`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteRecordsTopicResult {
+    /// Topic name.
+    pub name: String,
+    /// Partition-level deletion results.
+    pub partitions: Vec<DeleteRecordsPartitionResult>,
+}
+
+/// Parsed response from a `DeleteRecords` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteRecordsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Topic-level deletion results returned by the broker.
+    pub topics: Vec<DeleteRecordsTopicResult>,
+}
+
+/// Options for an `ElectLeaders` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElectLeadersOptions {
+    /// Raw Kafka election type.
+    pub election_type: i8,
+    /// Topic partitions to elect leaders for, or `None` for all eligible partitions.
+    pub topic_partitions: Option<Vec<TopicPartitionFilter>>,
+    /// Timeout in milliseconds.
+    pub timeout_ms: i32,
+}
+
+impl ElectLeadersOptions {
+    /// Create options for the supplied partitions.
+    #[must_use]
+    pub fn new<I>(election_type: i8, topic_partitions: I) -> Self
+    where
+        I: IntoIterator<Item = TopicPartitionFilter>,
+    {
+        Self {
+            election_type,
+            topic_partitions: Some(topic_partitions.into_iter().collect()),
+            timeout_ms: 60_000,
+        }
+    }
+
+    /// Create options that ask the broker to elect leaders for all eligible partitions.
+    #[must_use]
+    pub fn all_partitions(election_type: i8) -> Self {
+        Self {
+            election_type,
+            topic_partitions: None,
+            timeout_ms: 60_000,
+        }
+    }
+
+    /// Set the broker-side timeout in milliseconds.
+    #[must_use]
+    pub fn with_timeout_ms(mut self, timeout_ms: i32) -> Self {
+        self.timeout_ms = timeout_ms;
+        self
+    }
+}
+
+/// Per-partition leader election result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElectLeadersPartitionResult {
+    /// Partition index.
+    pub partition_id: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Per-topic leader election result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElectLeadersTopicResult {
+    /// Topic name.
+    pub topic: String,
+    /// Partition-level election results.
+    pub partition_results: Vec<ElectLeadersPartitionResult>,
+}
+
+/// Parsed response from an `ElectLeaders` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElectLeadersResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Topic-level election results returned by the broker.
+    pub replica_election_results: Vec<ElectLeadersTopicResult>,
+}
+
+/// A partition reassignment entry for `AlterPartitionReassignments`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionReassignmentSpec {
+    /// Partition index.
+    pub partition_index: i32,
+    /// New replica broker IDs, or `None` to cancel an active reassignment.
+    pub replicas: Option<Vec<i32>>,
+}
+
+impl PartitionReassignmentSpec {
+    /// Create a partition reassignment.
+    #[must_use]
+    pub fn new<I>(partition_index: i32, replicas: I) -> Self
+    where
+        I: IntoIterator<Item = i32>,
+    {
+        Self {
+            partition_index,
+            replicas: Some(replicas.into_iter().collect()),
+        }
+    }
+
+    /// Create a partition reassignment cancellation.
+    #[must_use]
+    pub fn cancel(partition_index: i32) -> Self {
+        Self {
+            partition_index,
+            replicas: None,
+        }
+    }
+}
+
+/// Per-topic reassignment spec for `AlterPartitionReassignments`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionReassignmentTopicSpec {
+    /// Topic name.
+    pub topic: String,
+    /// Partition reassignments for this topic.
+    pub partitions: Vec<PartitionReassignmentSpec>,
+}
+
+impl PartitionReassignmentTopicSpec {
+    /// Create a topic reassignment spec.
+    #[must_use]
+    pub fn new<I>(topic: impl Into<String>, partitions: I) -> Self
+    where
+        I: IntoIterator<Item = PartitionReassignmentSpec>,
+    {
+        Self {
+            topic: topic.into(),
+            partitions: partitions.into_iter().collect(),
+        }
+    }
+}
+
+/// Options for an `AlterPartitionReassignments` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterPartitionReassignmentsOptions {
+    /// Timeout in milliseconds.
+    pub timeout_ms: i32,
+    /// Whether replication-factor changes are allowed.
+    pub allow_replication_factor_change: bool,
+    /// Topic reassignments to alter.
+    pub topics: Vec<PartitionReassignmentTopicSpec>,
+}
+
+impl AlterPartitionReassignmentsOptions {
+    /// Create options with the supplied topic reassignments.
+    #[must_use]
+    pub fn new<I>(topics: I) -> Self
+    where
+        I: IntoIterator<Item = PartitionReassignmentTopicSpec>,
+    {
+        Self {
+            timeout_ms: 60_000,
+            allow_replication_factor_change: true,
+            topics: topics.into_iter().collect(),
+        }
+    }
+
+    /// Set the broker-side timeout in milliseconds.
+    #[must_use]
+    pub fn with_timeout_ms(mut self, timeout_ms: i32) -> Self {
+        self.timeout_ms = timeout_ms;
+        self
+    }
+
+    /// Control whether replication-factor changes are allowed.
+    #[must_use]
+    pub fn with_allow_replication_factor_change(mut self, allow: bool) -> Self {
+        self.allow_replication_factor_change = allow;
+        self
+    }
+}
+
+/// Per-partition result returned by `AlterPartitionReassignments`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterPartitionReassignmentsPartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Per-topic result returned by `AlterPartitionReassignments`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterPartitionReassignmentsTopicResult {
+    /// Topic name.
+    pub name: String,
+    /// Partition-level reassignment results.
+    pub partitions: Vec<AlterPartitionReassignmentsPartitionResult>,
+}
+
+/// Parsed response from an `AlterPartitionReassignments` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterPartitionReassignmentsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Whether replication-factor changes were allowed.
+    pub allow_replication_factor_change: bool,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Optional top-level broker error message.
+    pub error_message: Option<String>,
+    /// Topic-level reassignment results returned by the broker.
+    pub responses: Vec<AlterPartitionReassignmentsTopicResult>,
+}
+
+/// Partition request for `OffsetForLeaderEpoch`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderEpochPartitionRequest {
+    /// Partition index.
+    pub partition: i32,
+    /// Current leader epoch known by the caller, or Kafka's `-1` sentinel.
+    pub current_leader_epoch: i32,
+    /// Leader epoch whose end offset should be looked up.
+    pub leader_epoch: i32,
+}
+
+impl LeaderEpochPartitionRequest {
+    /// Create a leader-epoch offset lookup partition request.
+    #[must_use]
+    pub fn new(partition: i32, current_leader_epoch: i32, leader_epoch: i32) -> Self {
+        Self {
+            partition,
+            current_leader_epoch,
+            leader_epoch,
+        }
+    }
+}
+
+/// Per-topic request for `OffsetForLeaderEpoch`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderEpochTopicRequest {
+    /// Topic name.
+    pub topic: String,
+    /// Partition epoch lookups for this topic.
+    pub partitions: Vec<LeaderEpochPartitionRequest>,
+}
+
+impl LeaderEpochTopicRequest {
+    /// Create a leader-epoch offset lookup topic request.
+    #[must_use]
+    pub fn new<I>(topic: impl Into<String>, partitions: I) -> Self
+    where
+        I: IntoIterator<Item = LeaderEpochPartitionRequest>,
+    {
+        Self {
+            topic: topic.into(),
+            partitions: partitions.into_iter().collect(),
+        }
+    }
+}
+
+/// Per-partition offset returned by `OffsetForLeaderEpoch`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderEpochPartitionOffset {
+    /// Per-partition broker error code.
+    pub error_code: i16,
+    /// Partition index.
+    pub partition: i32,
+    /// Leader epoch of the returned end offset.
+    pub leader_epoch: i32,
+    /// End offset for the requested leader epoch.
+    pub end_offset: i64,
+}
+
+/// Per-topic result returned by `OffsetForLeaderEpoch`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaderEpochTopicOffsets {
+    /// Topic name.
+    pub topic: String,
+    /// Partition offsets for this topic.
+    pub partitions: Vec<LeaderEpochPartitionOffset>,
+}
+
+/// Parsed response from an `OffsetForLeaderEpoch` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetForLeaderEpochResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Topic-level leader-epoch offsets returned by the broker.
+    pub topics: Vec<LeaderEpochTopicOffsets>,
 }
 
 /// Per-partition result returned by `OffsetDelete`.
@@ -1839,6 +2301,48 @@ pub fn build_describe_log_dirs_request(
     (header, request)
 }
 
+/// Build a `DeleteRecords` request.
+pub fn build_delete_records_request(
+    correlation_id: i32,
+    client_id: &str,
+    topics: &[DeleteRecordsTopicSpec],
+    timeout_ms: i32,
+) -> (RequestHeader, DeleteRecordsRequest) {
+    use kafka_protocol::messages::delete_records_request::{
+        DeleteRecordsPartition, DeleteRecordsTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DeleteRecords,
+        API_VERSION_DELETE_RECORDS,
+    );
+    let topics = topics
+        .iter()
+        .map(|topic| {
+            DeleteRecordsTopic::default()
+                .with_name(StrBytes::from_string(topic.topic.clone()).into())
+                .with_partitions(
+                    topic
+                        .partitions
+                        .iter()
+                        .map(|partition| {
+                            DeleteRecordsPartition::default()
+                                .with_partition_index(partition.partition_index)
+                                .with_offset(partition.offset)
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = DeleteRecordsRequest::default()
+        .with_topics(topics)
+        .with_timeout_ms(timeout_ms);
+
+    (header, request)
+}
+
 /// Build a `ListPartitionReassignments` request.
 pub fn build_list_partition_reassignments_request(
     correlation_id: i32,
@@ -1866,6 +2370,51 @@ pub fn build_list_partition_reassignments_request(
     });
     let request = ListPartitionReassignmentsRequest::default()
         .with_timeout_ms(timeout_ms)
+        .with_topics(topics);
+
+    (header, request)
+}
+
+/// Build an `AlterPartitionReassignments` request.
+pub fn build_alter_partition_reassignments_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &AlterPartitionReassignmentsOptions,
+) -> (RequestHeader, AlterPartitionReassignmentsRequest) {
+    use kafka_protocol::messages::alter_partition_reassignments_request::{
+        ReassignablePartition, ReassignableTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AlterPartitionReassignments,
+        API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+    );
+    let topics = options
+        .topics
+        .iter()
+        .map(|topic| {
+            ReassignableTopic::default()
+                .with_name(StrBytes::from_string(topic.topic.clone()).into())
+                .with_partitions(
+                    topic
+                        .partitions
+                        .iter()
+                        .map(|partition| {
+                            ReassignablePartition::default()
+                                .with_partition_index(partition.partition_index)
+                                .with_replicas(partition.replicas.as_ref().map(|replicas| {
+                                    replicas.iter().copied().map(Into::into).collect()
+                                }))
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = AlterPartitionReassignmentsRequest::default()
+        .with_timeout_ms(options.timeout_ms)
+        .with_allow_replication_factor_change(options.allow_replication_factor_change)
         .with_topics(topics);
 
     (header, request)
@@ -1905,6 +2454,38 @@ pub fn build_describe_quorum_request(
         })
         .collect();
     let request = DescribeQuorumRequest::default().with_topics(topics);
+
+    (header, request)
+}
+
+/// Build an `ElectLeaders` request.
+pub fn build_elect_leaders_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &ElectLeadersOptions,
+) -> (RequestHeader, ElectLeadersRequest) {
+    use kafka_protocol::messages::elect_leaders_request::TopicPartitions;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::ElectLeaders,
+        API_VERSION_ELECT_LEADERS,
+    );
+    let topic_partitions = options.topic_partitions.as_ref().map(|topics| {
+        topics
+            .iter()
+            .map(|topic| {
+                TopicPartitions::default()
+                    .with_topic(StrBytes::from_string(topic.topic.clone()).into())
+                    .with_partitions(topic.partitions.clone())
+            })
+            .collect()
+    });
+    let request = ElectLeadersRequest::default()
+        .with_election_type(options.election_type)
+        .with_topic_partitions(topic_partitions)
+        .with_timeout_ms(options.timeout_ms);
 
     (header, request)
 }
@@ -1963,6 +2544,49 @@ pub fn build_list_config_resources_request(
     );
     let request =
         ListConfigResourcesRequest::default().with_resource_types(resource_types.to_vec());
+
+    (header, request)
+}
+
+/// Build a `CreatePartitions` request.
+pub fn build_create_partitions_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &CreatePartitionsOptions,
+) -> (RequestHeader, CreatePartitionsRequest) {
+    use kafka_protocol::messages::create_partitions_request::{
+        CreatePartitionsAssignment, CreatePartitionsTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::CreatePartitions,
+        API_VERSION_CREATE_PARTITIONS,
+    );
+    let topics = options
+        .topics
+        .iter()
+        .map(|topic| {
+            CreatePartitionsTopic::default()
+                .with_name(StrBytes::from_string(topic.topic.clone()).into())
+                .with_count(topic.count)
+                .with_assignments(topic.assignments.as_ref().map(|assignments| {
+                    assignments
+                        .iter()
+                        .map(|assignment| {
+                            CreatePartitionsAssignment::default().with_broker_ids(
+                                assignment.iter().copied().map(Into::into).collect(),
+                            )
+                        })
+                        .collect()
+                }))
+        })
+        .collect();
+    let request = CreatePartitionsRequest::default()
+        .with_topics(topics)
+        .with_timeout_ms(options.timeout_ms)
+        .with_validate_only(options.validate_only);
 
     (header, request)
 }
@@ -2133,6 +2757,48 @@ pub fn build_describe_producers_request(
         })
         .collect();
     let request = DescribeProducersRequest::default().with_topics(topics);
+
+    (header, request)
+}
+
+/// Build an `OffsetForLeaderEpoch` request.
+pub fn build_offset_for_leader_epoch_request(
+    correlation_id: i32,
+    client_id: &str,
+    topics: &[LeaderEpochTopicRequest],
+) -> (RequestHeader, OffsetForLeaderEpochRequest) {
+    use kafka_protocol::messages::offset_for_leader_epoch_request::{
+        OffsetForLeaderPartition, OffsetForLeaderTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::OffsetForLeaderEpoch,
+        API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+    );
+    let topics = topics
+        .iter()
+        .map(|topic| {
+            OffsetForLeaderTopic::default()
+                .with_topic(StrBytes::from_string(topic.topic.clone()).into())
+                .with_partitions(
+                    topic
+                        .partitions
+                        .iter()
+                        .map(|partition| {
+                            OffsetForLeaderPartition::default()
+                                .with_partition(partition.partition)
+                                .with_current_leader_epoch(partition.current_leader_epoch)
+                                .with_leader_epoch(partition.leader_epoch)
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = OffsetForLeaderEpochRequest::default()
+        .with_replica_id((-1).into())
+        .with_topics(topics);
 
     (header, request)
 }
@@ -2489,6 +3155,31 @@ pub fn convert_describe_log_dirs_response(
     }
 }
 
+/// Convert a generated `DeleteRecordsResponse` into the crate's public shape.
+pub fn convert_delete_records_response(
+    response: DeleteRecordsResponse,
+) -> DeleteRecordsResponseData {
+    DeleteRecordsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        topics: response
+            .topics
+            .into_iter()
+            .map(|topic| DeleteRecordsTopicResult {
+                name: topic.name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|partition| DeleteRecordsPartitionResult {
+                        partition_index: partition.partition_index,
+                        low_watermark: partition.low_watermark,
+                        error_code: partition.error_code,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeDelegationTokenResponse` into the crate's public shape.
 pub fn convert_describe_delegation_token_response(
     response: DescribeDelegationTokenResponse,
@@ -2570,6 +3261,34 @@ pub fn convert_list_partition_reassignments_response(
     }
 }
 
+/// Convert a generated `AlterPartitionReassignmentsResponse` into the crate's public shape.
+pub fn convert_alter_partition_reassignments_response(
+    response: AlterPartitionReassignmentsResponse,
+) -> AlterPartitionReassignmentsResponseData {
+    AlterPartitionReassignmentsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        allow_replication_factor_change: response.allow_replication_factor_change,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|message| message.to_string()),
+        responses: response
+            .responses
+            .into_iter()
+            .map(|topic| AlterPartitionReassignmentsTopicResult {
+                name: topic.name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|partition| AlterPartitionReassignmentsPartitionResult {
+                        partition_index: partition.partition_index,
+                        error_code: partition.error_code,
+                        error_message: partition.error_message.map(|message| message.to_string()),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeQuorumResponse` into the crate's public shape.
 pub fn convert_describe_quorum_response(
     response: DescribeQuorumResponse,
@@ -2634,6 +3353,30 @@ fn convert_quorum_replica_state(
         log_end_offset: replica.log_end_offset,
         last_fetch_timestamp: replica.last_fetch_timestamp,
         last_caught_up_timestamp: replica.last_caught_up_timestamp,
+    }
+}
+
+/// Convert a generated `ElectLeadersResponse` into the crate's public shape.
+pub fn convert_elect_leaders_response(response: ElectLeadersResponse) -> ElectLeadersResponseData {
+    ElectLeadersResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        replica_election_results: response
+            .replica_election_results
+            .into_iter()
+            .map(|topic| ElectLeadersTopicResult {
+                topic: topic.topic.to_string(),
+                partition_results: topic
+                    .partition_result
+                    .into_iter()
+                    .map(|partition| ElectLeadersPartitionResult {
+                        partition_id: partition.partition_id,
+                        error_code: partition.error_code,
+                        error_message: partition.error_message.map(|message| message.to_string()),
+                    })
+                    .collect(),
+            })
+            .collect(),
     }
 }
 
@@ -2772,6 +3515,24 @@ pub fn convert_list_config_resources_response(
             .map(|resource| ListedConfigResource {
                 resource_type: resource.resource_type,
                 resource_name: resource.resource_name.to_string(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `CreatePartitionsResponse` into the crate's public shape.
+pub fn convert_create_partitions_response(
+    response: CreatePartitionsResponse,
+) -> CreatePartitionsResponseData {
+    CreatePartitionsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        results: response
+            .results
+            .into_iter()
+            .map(|result| CreatePartitionsTopicResult {
+                name: result.name.to_string(),
+                error_code: result.error_code,
+                error_message: result.error_message.map(|message| message.to_string()),
             })
             .collect(),
     }
@@ -2960,6 +3721,32 @@ pub fn convert_describe_producers_response(
     }
 }
 
+/// Convert a generated `OffsetForLeaderEpochResponse` into the crate's public shape.
+pub fn convert_offset_for_leader_epoch_response(
+    response: OffsetForLeaderEpochResponse,
+) -> OffsetForLeaderEpochResponseData {
+    OffsetForLeaderEpochResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        topics: response
+            .topics
+            .into_iter()
+            .map(|topic| LeaderEpochTopicOffsets {
+                topic: topic.topic.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|partition| LeaderEpochPartitionOffset {
+                        error_code: partition.error_code,
+                        partition: partition.partition,
+                        leader_epoch: partition.leader_epoch,
+                        end_offset: partition.end_offset,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `OffsetDeleteResponse` into the crate's public shape.
 pub fn convert_offset_delete_response(response: OffsetDeleteResponse) -> OffsetDeleteResponseData {
     OffsetDeleteResponseData {
@@ -3068,16 +3855,25 @@ fn transactional_id(value: &str) -> kafka_protocol::messages::TransactionalId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kafka_protocol::messages::alter_partition_reassignments_response::{
+        ReassignablePartitionResponse as KpReassignablePartitionResponse,
+        ReassignableTopicResponse as KpReassignableTopicResponse,
+    };
     use kafka_protocol::messages::consumer_group_describe_response::{
         Assignment as KpConsumerGroupAssignment, DescribedGroup as KpConsumerGroupDescription,
         Member as KpConsumerGroupMember, TopicPartitions as KpConsumerGroupTopicPartitions,
     };
     use kafka_protocol::messages::create_acls_response::AclCreationResult as KpAclCreationResult;
+    use kafka_protocol::messages::create_partitions_response::CreatePartitionsTopicResult as KpCreatePartitionsTopicResult;
     use kafka_protocol::messages::delete_acls_response::{
         DeleteAclsFilterResult as KpDeleteAclsFilterResult,
         DeleteAclsMatchingAcl as KpDeleteAclsMatchingAcl,
     };
     use kafka_protocol::messages::delete_groups_response::DeletableGroupResult as KpDeletableGroupResult;
+    use kafka_protocol::messages::delete_records_response::{
+        DeleteRecordsPartitionResult as KpDeleteRecordsPartitionResult,
+        DeleteRecordsTopicResult as KpDeleteRecordsTopicResult,
+    };
     use kafka_protocol::messages::describe_acls_response::{
         AclDescription as KpAclDescription, DescribeAclsResource as KpAclResource,
     };
@@ -3128,6 +3924,10 @@ mod tests {
         CredentialInfo as KpScramCredentialInfo,
         DescribeUserScramCredentialsResult as KpScramCredentialsResult,
     };
+    use kafka_protocol::messages::elect_leaders_response::{
+        PartitionResult as KpElectionPartitionResult,
+        ReplicaElectionResult as KpReplicaElectionResult,
+    };
     use kafka_protocol::messages::list_config_resources_response::ConfigResource as KpListedConfigResource;
     use kafka_protocol::messages::list_groups_response::ListedGroup as KpListedGroup;
     use kafka_protocol::messages::list_partition_reassignments_response::{
@@ -3138,6 +3938,10 @@ mod tests {
     use kafka_protocol::messages::offset_delete_response::{
         OffsetDeleteResponsePartition as KpOffsetDeletePartition,
         OffsetDeleteResponseTopic as KpOffsetDeleteTopic,
+    };
+    use kafka_protocol::messages::offset_for_leader_epoch_response::{
+        EpochEndOffset as KpEpochEndOffset,
+        OffsetForLeaderTopicResult as KpOffsetForLeaderTopicResult,
     };
     use kafka_protocol::messages::share_group_describe_response::{
         Assignment as KpShareGroupAssignment, DescribedGroup as KpShareGroupDescription,
@@ -3396,14 +4200,104 @@ mod tests {
     }
 
     #[test]
+    fn delete_records_request_preserves_partition_offsets() {
+        let topics = [DeleteRecordsTopicSpec::new(
+            "topic-a",
+            [
+                DeleteRecordsPartitionSpec::new(0, 42),
+                DeleteRecordsPartitionSpec::new(2, 99),
+            ],
+        )];
+        let (header, request) = build_delete_records_request(17, "client-k", &topics, 5_000);
+
+        assert_eq!(header.request_api_key, ApiKey::DeleteRecords as i16);
+        assert_eq!(header.request_api_version, API_VERSION_DELETE_RECORDS);
+        assert_eq!(request.timeout_ms, 5_000);
+        assert_eq!(request.topics[0].name.to_string(), "topic-a");
+        assert_eq!(request.topics[0].partitions[0].partition_index, 0);
+        assert_eq!(request.topics[0].partitions[0].offset, 42);
+        assert_eq!(request.topics[0].partitions[1].partition_index, 2);
+        assert_eq!(request.topics[0].partitions[1].offset, 99);
+    }
+
+    #[test]
+    fn alter_partition_reassignments_request_preserves_replicas_and_cancellations() {
+        let options =
+            AlterPartitionReassignmentsOptions::new([PartitionReassignmentTopicSpec::new(
+                "topic-a",
+                [
+                    PartitionReassignmentSpec::new(0, [1, 2, 3]),
+                    PartitionReassignmentSpec::cancel(1),
+                ],
+            )])
+            .with_timeout_ms(6_000)
+            .with_allow_replication_factor_change(false);
+        let (header, request) =
+            build_alter_partition_reassignments_request(18, "client-l", &options);
+
+        assert_eq!(
+            header.request_api_key,
+            ApiKey::AlterPartitionReassignments as i16
+        );
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_ALTER_PARTITION_REASSIGNMENTS
+        );
+        assert_eq!(request.timeout_ms, 6_000);
+        assert!(!request.allow_replication_factor_change);
+        let topic = &request.topics[0];
+        assert_eq!(topic.name.to_string(), "topic-a");
+        assert_eq!(topic.partitions[0].partition_index, 0);
+        assert_eq!(
+            topic.partitions[0]
+                .replicas
+                .as_ref()
+                .unwrap()
+                .iter()
+                .copied()
+                .map(i32::from)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(topic.partitions[1].partition_index, 1);
+        assert!(topic.partitions[1].replicas.is_none());
+    }
+
+    #[test]
     fn describe_quorum_request_uses_topic_partition_filters() {
         let filter = [TopicPartitionFilter::new("cluster-metadata", [0])];
-        let (header, request) = build_describe_quorum_request(17, "client-l", &filter);
+        let (header, request) = build_describe_quorum_request(19, "client-l", &filter);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeQuorum as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_QUORUM);
         assert_eq!(request.topics[0].topic_name.to_string(), "cluster-metadata");
         assert_eq!(request.topics[0].partitions[0].partition_index, 0);
+    }
+
+    #[test]
+    fn elect_leaders_request_preserves_type_timeout_and_optional_scope() {
+        let scoped = ElectLeadersOptions::new(
+            ELECTION_TYPE_UNCLEAN,
+            [TopicPartitionFilter::new("topic-a", [0, 2])],
+        )
+        .with_timeout_ms(7_000);
+        let (header, request) = build_elect_leaders_request(20, "client-m", &scoped);
+
+        assert_eq!(header.request_api_key, ApiKey::ElectLeaders as i16);
+        assert_eq!(header.request_api_version, API_VERSION_ELECT_LEADERS);
+        assert_eq!(request.election_type, ELECTION_TYPE_UNCLEAN);
+        assert_eq!(request.timeout_ms, 7_000);
+        let topics = request.topic_partitions.as_ref().unwrap();
+        assert_eq!(topics[0].topic.to_string(), "topic-a");
+        assert_eq!(topics[0].partitions, vec![0, 2]);
+
+        let (_, all_request) = build_elect_leaders_request(
+            21,
+            "client-n",
+            &ElectLeadersOptions::all_partitions(ELECTION_TYPE_PREFERRED),
+        );
+        assert!(all_request.topic_partitions.is_none());
+        assert_eq!(all_request.election_type, ELECTION_TYPE_PREFERRED);
     }
 
     #[test]
@@ -3423,7 +4317,7 @@ mod tests {
     #[test]
     fn share_group_describe_request_includes_authorized_operations_flag() {
         let (header, request) =
-            build_share_group_describe_request(19, "client-n", &["share-a"], true);
+            build_share_group_describe_request(22, "client-n", &["share-a"], true);
 
         assert_eq!(header.request_api_key, ApiKey::ShareGroupDescribe as i16);
         assert_eq!(header.request_api_version, API_VERSION_SHARE_GROUP_DESCRIBE);
@@ -3440,7 +4334,7 @@ mod tests {
                 [TopicPartitionFilter::new("topic-a", [0, 2])],
             ),
         ];
-        let (header, request) = build_describe_share_group_offsets_request(20, "client-o", &groups);
+        let (header, request) = build_describe_share_group_offsets_request(23, "client-o", &groups);
 
         assert_eq!(
             header.request_api_key,
@@ -3456,6 +4350,57 @@ mod tests {
         let topics = request.groups[1].topics.as_ref().unwrap();
         assert_eq!(topics[0].topic_name.to_string(), "topic-a");
         assert_eq!(topics[0].partitions, vec![0, 2]);
+    }
+
+    #[test]
+    fn create_partitions_request_preserves_options_and_assignments() {
+        let options = CreatePartitionsOptions::new([
+            CreatePartitionsTopicSpec::new("topic-a", 6).with_assignments([[1, 2], [2, 3]]),
+            CreatePartitionsTopicSpec::new("topic-b", 3),
+        ])
+        .with_timeout_ms(8_000)
+        .with_validate_only(true);
+        let (header, request) = build_create_partitions_request(24, "client-p", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::CreatePartitions as i16);
+        assert_eq!(header.request_api_version, API_VERSION_CREATE_PARTITIONS);
+        assert_eq!(request.timeout_ms, 8_000);
+        assert!(request.validate_only);
+        assert_eq!(request.topics[0].name.to_string(), "topic-a");
+        assert_eq!(request.topics[0].count, 6);
+        let assignments = request.topics[0].assignments.as_ref().unwrap();
+        assert_eq!(
+            assignments[0]
+                .broker_ids
+                .iter()
+                .copied()
+                .map(i32::from)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(request.topics[1].name.to_string(), "topic-b");
+        assert!(request.topics[1].assignments.is_none());
+    }
+
+    #[test]
+    fn offset_for_leader_epoch_request_preserves_epoch_fields() {
+        let topics = [LeaderEpochTopicRequest::new(
+            "topic-a",
+            [LeaderEpochPartitionRequest::new(0, -1, 7)],
+        )];
+        let (header, request) = build_offset_for_leader_epoch_request(25, "client-q", &topics);
+
+        assert_eq!(header.request_api_key, ApiKey::OffsetForLeaderEpoch as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_OFFSET_FOR_LEADER_EPOCH
+        );
+        assert_eq!(i32::from(request.replica_id), -1);
+        assert_eq!(request.topics[0].topic.to_string(), "topic-a");
+        let partition = &request.topics[0].partitions[0];
+        assert_eq!(partition.partition, 0);
+        assert_eq!(partition.current_leader_epoch, -1);
+        assert_eq!(partition.leader_epoch, 7);
     }
 
     #[test]
@@ -4036,6 +4981,63 @@ mod tests {
     }
 
     #[test]
+    fn convert_delete_records_response_preserves_low_watermarks() {
+        let response = DeleteRecordsResponse::default()
+            .with_throttle_time_ms(18)
+            .with_topics(vec![
+                KpDeleteRecordsTopicResult::default()
+                    .with_name(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpDeleteRecordsPartitionResult::default()
+                            .with_partition_index(0)
+                            .with_low_watermark(42)
+                            .with_error_code(0),
+                    ]),
+            ]);
+
+        let converted = convert_delete_records_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.topics[0].name, "topic-a");
+        assert_eq!(converted.topics[0].partitions[0].partition_index, 0);
+        assert_eq!(converted.topics[0].partitions[0].low_watermark, 42);
+        assert_eq!(converted.topics[0].partitions[0].error_code, 0);
+    }
+
+    #[test]
+    fn convert_alter_partition_reassignments_response_preserves_nested_errors() {
+        let response = AlterPartitionReassignmentsResponse::default()
+            .with_throttle_time_ms(19)
+            .with_allow_replication_factor_change(false)
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("ok")))
+            .with_responses(vec![
+                KpReassignableTopicResponse::default()
+                    .with_name(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpReassignablePartitionResponse::default()
+                            .with_partition_index(1)
+                            .with_error_code(15)
+                            .with_error_message(Some(StrBytes::from_static_str("denied"))),
+                    ]),
+            ]);
+
+        let converted = convert_alter_partition_reassignments_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 19);
+        assert!(!converted.allow_replication_factor_change);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.error_message, Some("ok".to_owned()));
+        assert_eq!(converted.responses[0].name, "topic-a");
+        assert_eq!(converted.responses[0].partitions[0].partition_index, 1);
+        assert_eq!(converted.responses[0].partitions[0].error_code, 15);
+        assert_eq!(
+            converted.responses[0].partitions[0].error_message,
+            Some("denied".to_owned())
+        );
+    }
+
+    #[test]
     fn convert_describe_quorum_response_preserves_kraft_state() {
         let response = DescribeQuorumResponse::default()
             .with_error_code(0)
@@ -4094,6 +5096,37 @@ mod tests {
         );
         assert_eq!(converted.nodes[0].listeners[0].host, "broker-1");
         assert_eq!(converted.nodes[0].listeners[0].port, 9093);
+    }
+
+    #[test]
+    fn convert_elect_leaders_response_preserves_partition_errors() {
+        let response = ElectLeadersResponse::default()
+            .with_throttle_time_ms(20)
+            .with_error_code(0)
+            .with_replica_election_results(vec![
+                KpReplicaElectionResult::default()
+                    .with_topic(StrBytes::from_static_str("topic-a").into())
+                    .with_partition_result(vec![
+                        KpElectionPartitionResult::default()
+                            .with_partition_id(0)
+                            .with_error_code(0)
+                            .with_error_message(Some(StrBytes::from_static_str("ok"))),
+                    ]),
+            ]);
+
+        let converted = convert_elect_leaders_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 20);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.replica_election_results[0].topic, "topic-a");
+        assert_eq!(
+            converted.replica_election_results[0].partition_results[0].partition_id,
+            0
+        );
+        assert_eq!(
+            converted.replica_election_results[0].partition_results[0].error_message,
+            Some("ok".to_owned())
+        );
     }
 
     #[test]
@@ -4249,6 +5282,25 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn convert_create_partitions_response_preserves_topic_results() {
+        let response = CreatePartitionsResponse::default()
+            .with_throttle_time_ms(21)
+            .with_results(vec![
+                KpCreatePartitionsTopicResult::default()
+                    .with_name(StrBytes::from_static_str("topic-a").into())
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok"))),
+            ]);
+
+        let converted = convert_create_partitions_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 21);
+        assert_eq!(converted.results[0].name, "topic-a");
+        assert_eq!(converted.results[0].error_code, 0);
+        assert_eq!(converted.results[0].error_message, Some("ok".to_owned()));
     }
 
     #[test]
@@ -4490,6 +5542,32 @@ mod tests {
             converted.topics[0].partitions[0].active_producers[0].current_txn_start_offset,
             99
         );
+    }
+
+    #[test]
+    fn convert_offset_for_leader_epoch_response_preserves_epoch_offsets() {
+        let response = OffsetForLeaderEpochResponse::default()
+            .with_throttle_time_ms(22)
+            .with_topics(vec![
+                KpOffsetForLeaderTopicResult::default()
+                    .with_topic(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpEpochEndOffset::default()
+                            .with_error_code(0)
+                            .with_partition(0)
+                            .with_leader_epoch(7)
+                            .with_end_offset(420),
+                    ]),
+            ]);
+
+        let converted = convert_offset_for_leader_epoch_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 22);
+        assert_eq!(converted.topics[0].topic, "topic-a");
+        assert_eq!(converted.topics[0].partitions[0].partition, 0);
+        assert_eq!(converted.topics[0].partitions[0].leader_epoch, 7);
+        assert_eq!(converted.topics[0].partitions[0].end_offset, 420);
+        assert_eq!(converted.topics[0].partitions[0].error_code, 0);
     }
 
     #[test]
