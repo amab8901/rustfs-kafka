@@ -15,9 +15,9 @@ Source checked:
 ## Coverage Summary
 
 - Total `kafka-protocol` API keys: 87.
-- Public or high-level runtime coverage: 29 APIs.
+- Public or high-level runtime coverage: 33 APIs.
 - Internal runtime coverage without direct public API: 10 APIs.
-- Client-facing backlog: 19 APIs.
+- Client-facing backlog: 15 APIs.
 - Advanced runtime backlog: 10 APIs.
 - Broker/controller/internal backlog: 19 APIs.
 
@@ -51,8 +51,8 @@ Source checked:
 | 27 | WriteTxnMarkers | Missing coordinator-internal API | Do not expose as normal client API. |
 | 28 | TxnOffsetCommit | Missing advanced transaction runtime API | Add when transactional consumer offset commit workflow is implemented. |
 | 29 | DescribeAcls | Public admin implemented | Done. |
-| 30 | CreateAcls | Missing client-facing admin API | Add public ACL creation helper. |
-| 31 | DeleteAcls | Missing client-facing admin API | Add public ACL deletion helper. |
+| 30 | CreateAcls | Public admin implemented | Done. |
+| 31 | DeleteAcls | Public admin implemented | Done. |
 | 32 | DescribeConfigs | Public admin implemented | Done. |
 | 33 | AlterConfigs | Missing client-facing admin API | Prefer `IncrementalAlterConfigs`; expose legacy API only if compatibility requires it. |
 | 34 | AlterReplicaLogDirs | Missing client-facing admin API | Add advanced broker storage reassignment helper. |
@@ -63,12 +63,12 @@ Source checked:
 | 39 | RenewDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
 | 40 | ExpireDelegationToken | Missing client-facing security API | Add token lifecycle helper. |
 | 41 | DescribeDelegationToken | Public admin implemented | Done. |
-| 42 | DeleteGroups | Missing client-facing admin API | Add public group deletion helper. |
+| 42 | DeleteGroups | Public admin implemented | Done. |
 | 43 | ElectLeaders | Missing client-facing admin API | Add public preferred/unclean leader election helper. |
 | 44 | IncrementalAlterConfigs | Missing client-facing admin API | Add preferred config mutation helper. |
 | 45 | AlterPartitionReassignments | Missing client-facing admin API | Add public partition reassignment mutation helper. |
 | 46 | ListPartitionReassignments | Public admin implemented | Done. |
-| 47 | OffsetDelete | Missing client-facing admin API | Add public consumer-group committed-offset delete helper. |
+| 47 | OffsetDelete | Public admin implemented | Done. |
 | 48 | DescribeClientQuotas | Public admin implemented | Done. |
 | 49 | AlterClientQuotas | Missing client-facing admin API | Add public client quota mutation helper. |
 | 50 | DescribeUserScramCredentials | Public admin implemented | Done. |
@@ -115,12 +115,11 @@ Source checked:
 
 ## Recommended Implementation Batches
 
-1. Admin mutation basics: `CreateAcls`, `DeleteAcls`, `DeleteGroups`, `OffsetDelete`.
-2. Topic/partition maintenance: `CreatePartitions`, `DeleteRecords`, `ElectLeaders`, `AlterPartitionReassignments`.
-3. Config and quota mutation: `IncrementalAlterConfigs`, `AlterClientQuotas`, possibly legacy `AlterConfigs`.
-4. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
-5. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
-6. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
-7. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
-8. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
+1. Topic/partition maintenance: `CreatePartitions`, `DeleteRecords`, `ElectLeaders`, `AlterPartitionReassignments`.
+2. Config and quota mutation: `IncrementalAlterConfigs`, `AlterClientQuotas`, possibly legacy `AlterConfigs`.
+3. Security lifecycle: `CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, `AlterUserScramCredentials`.
+4. Transaction completeness: `AddOffsetsToTxn`, `TxnOffsetCommit`.
+5. Share consumer runtime: `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
+6. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
+7. Explicitly scoped KRaft/broker admin: `UpdateFeatures`, `AssignReplicasToDirs`, `AddRaftVoter`,
    `RemoveRaftVoter`, `UpdateRaftVoter`, `UnregisterBroker`.

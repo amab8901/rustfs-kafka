@@ -131,7 +131,7 @@ tx.commit().unwrap();
 ```rust,no_run
 use std::time::Duration;
 use rustfs_kafka::client::{
-    ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
+    AclBinding, ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
     DescribeTopicPartitionsOptions, KafkaClient, KafkaPrincipal, ListTransactionsOptions,
     ShareGroupOffsetRequest, TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ,
     ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
@@ -160,6 +160,11 @@ for group in groups.groups {
         group.group_state,
         group.group_type
     );
+}
+
+let deleted_groups = client.delete_groups(&["old-group"]).unwrap();
+for group in deleted_groups.results {
+    println!("deleted_group={} error_code={}", group.group_id, group.error_code);
 }
 
 let described = client.describe_groups(&["my-group"]).unwrap();
@@ -220,6 +225,21 @@ for resource in acls.resources {
     println!("acl_resource={} acls={}", resource.resource_name, resource.acls.len());
 }
 
+let acl = AclBinding::new(
+    ACL_RESOURCE_TYPE_TOPIC,
+    "my-topic",
+    ACL_PATTERN_TYPE_LITERAL,
+    "User:alice",
+    "*",
+    ACL_OPERATION_READ,
+    ACL_PERMISSION_TYPE_ALLOW,
+);
+let created_acls = client.create_acls(&[acl]).unwrap();
+println!("created_acl_results={}", created_acls.results.len());
+
+let deleted_acls = client.delete_acls(&[acl_filter]).unwrap();
+println!("deleted_acl_filter_results={}", deleted_acls.filter_results.len());
+
 let configs = client
     .describe_configs(&[
         ConfigResource::topic("my-topic").with_configuration_keys(["retention.ms"]),
@@ -242,6 +262,13 @@ for resource in config_resources.resources {
 }
 
 let partitions = [TopicPartitionFilter::new("my-topic", [0, 1])];
+
+let deleted_offsets = client
+    .delete_group_offsets("old-group", &partitions)
+    .unwrap();
+for topic in deleted_offsets.topics {
+    println!("offset_delete_topic={} partitions={}", topic.name, topic.partitions.len());
+}
 
 let log_dirs = client.describe_log_dirs_for(&partitions).unwrap();
 for log_dir in log_dirs.results {
@@ -330,16 +357,20 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 
 - `describe_cluster_with_options(include_authorized_operations, include_fenced_brokers)`
 - `list_groups_with_filters(states_filter, types_filter)`
+- `delete_groups(groups)`
 - `describe_groups_with_options(groups, include_authorized_operations)`
 - `describe_consumer_groups_with_options(groups, include_authorized_operations)`
 - `describe_share_groups_with_options(groups, include_authorized_operations)`
 - `describe_share_group_offsets_with_options(groups)`
 - `describe_topic_partitions_with_options(options)`
 - `describe_acls_with_filter(filter)`
+- `create_acls(bindings)`
+- `delete_acls(filters)`
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
 - `list_config_resources_for(resource_types)`
 - `describe_delegation_tokens_for(owners)`
 - `describe_log_dirs_for(topic_partition_filters)`
+- `delete_group_offsets(group, topic_partition_filters)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
 - `describe_quorum(topic_partition_filters)`
 - `describe_client_quotas_with_options(options)`

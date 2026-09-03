@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `fetch_api_versions`
   - `describe_cluster` / `describe_cluster_with_options`
   - `describe_acls` / `describe_acls_with_filter`
+  - `create_acls`
+  - `delete_acls`
   - `describe_configs` / `describe_configs_with_options`
   - `list_config_resources` / `list_config_resources_for`
   - `describe_delegation_tokens` / `describe_delegation_tokens_for`
@@ -29,12 +31,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `describe_share_groups` / `describe_share_groups_with_options`
   - `describe_share_group_offsets` / `describe_share_group_offsets_with_options`
   - `list_groups` / `list_groups_with_filters`
+  - `delete_groups`
   - `describe_groups` / `describe_groups_with_options`
+  - `delete_group_offsets`
 - Added public response data types for broker API versions, cluster brokers, config resources/entries, config resource
-  discovery, listed groups, described groups, described group members, ACL resources, delegation tokens, log directory
-  diagnostics, KRaft quorum state, topic partition discovery, partition reassignments, client quotas, SCRAM credential
-  metadata, active producers, transactions, modern consumer group descriptions, share group descriptions, and share group
-  offsets.
+  discovery, listed groups, deleted groups, described groups, described group members, ACL resources, ACL mutation
+  results, delegation tokens, log directory diagnostics, KRaft quorum state, topic partition discovery, partition
+  reassignments, client quotas, SCRAM credential metadata, active producers, transactions, committed-offset deletion
+  results, modern consumer group descriptions, share group descriptions, and share group offsets.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 - Added `docs/protocol-coverage.md` to track `kafka-protocol` `0.18.0` API coverage and prioritize remaining
   client-facing protocol work.

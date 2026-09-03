@@ -60,17 +60,19 @@ pub use crate::protocol::admin::{
     ACL_PATTERN_TYPE_PREFIXED, ACL_PERMISSION_TYPE_ALLOW, ACL_PERMISSION_TYPE_ANY,
     ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
-    ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclDescription, AclResource,
-    ActiveProducer, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
+    ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclBinding, AclDescription,
+    AclResource, ActiveProducer, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
     CLIENT_QUOTA_MATCH_EXACT, CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER,
     CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
     ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
     ConsumerGroupAssignment, ConsumerGroupDescribeResponseData, ConsumerGroupDescription,
-    ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, DelegationTokenDescription,
-    DescribeAclsFilter, DescribeAclsResponseData, DescribeClientQuotasOptions,
-    DescribeClientQuotasResponseData, DescribeClusterResponseData, DescribeConfigsResponseData,
-    DescribeConfigsResult, DescribeDelegationTokenResponseData, DescribeGroupsResponseData,
-    DescribeLogDirsResponseData, DescribeProducersResponseData, DescribeQuorumResponseData,
+    ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, CreateAclResult,
+    CreateAclsResponseData, DelegationTokenDescription, DeleteAclsFilterResult,
+    DeleteAclsResponseData, DeleteGroupsResponseData, DeletedAcl, DeletedGroup, DescribeAclsFilter,
+    DescribeAclsResponseData, DescribeClientQuotasOptions, DescribeClientQuotasResponseData,
+    DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
+    DescribeDelegationTokenResponseData, DescribeGroupsResponseData, DescribeLogDirsResponseData,
+    DescribeProducersResponseData, DescribeQuorumResponseData,
     DescribeShareGroupOffsetsResponseData, DescribeTopicPartitionsOptions,
     DescribeTopicPartitionsResponseData, DescribeTransactionsResponseData,
     DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
@@ -78,8 +80,9 @@ pub use crate::protocol::admin::{
     ListConfigResourcesResponseData, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
     ListedConfigResource, ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition,
-    LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, QuorumListener,
-    QuorumNode, QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
+    LogDirTopic, OffsetDeletePartitionResult, OffsetDeleteResponseData, OffsetDeleteTopicResult,
+    PartitionReassignment, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
+    QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
     SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, ShareGroupAssignment,
     ShareGroupDescribeResponseData, ShareGroupDescription, ShareGroupMemberDescription,
     ShareGroupOffsetGroup, ShareGroupOffsetPartition, ShareGroupOffsetRequest,
@@ -939,6 +942,105 @@ impl KafkaClient {
                     return Ok(crate::protocol::admin::convert_describe_acls_response(resp));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeAcls")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Creates ACL bindings on the contacted broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn create_acls(&mut self, bindings: &[AclBinding]) -> Result<CreateAclsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "CreateAcls"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_create_acls_request(
+                correlation_id,
+                &self.config.client_id,
+                bindings,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_CREATE_ACLS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::CreateAclsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_CREATE_ACLS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_create_acls_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "CreateAcls")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Deletes ACLs matching the supplied filters.
+    ///
+    /// Each filter may match multiple ACL bindings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn delete_acls(
+        &mut self,
+        filters: &[DescribeAclsFilter],
+    ) -> Result<DeleteAclsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DeleteAcls"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_delete_acls_request(
+                correlation_id,
+                &self.config.client_id,
+                filters,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DELETE_ACLS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DeleteAclsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DELETE_ACLS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_delete_acls_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteAcls")),
             }
         }
 
@@ -1997,6 +2099,53 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Deletes the supplied consumer groups.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn delete_groups(&mut self, groups: &[&str]) -> Result<DeleteGroupsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DeleteGroups"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_delete_groups_request(
+                correlation_id,
+                &self.config.client_id,
+                groups,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DELETE_GROUPS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DeleteGroupsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DELETE_GROUPS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_delete_groups_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteGroups")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Describes the supplied consumer groups.
     ///
     /// The request is attempted against configured brokers until one succeeds.
@@ -2161,6 +2310,61 @@ impl KafkaClient {
     }
 
     // -- offset operations (delegated to offset_ops.rs) --
+
+    /// Deletes committed offsets for a consumer group.
+    ///
+    /// Kafka requires each topic to include the partitions whose committed offsets should be
+    /// removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn delete_group_offsets(
+        &mut self,
+        group: &str,
+        topics: &[TopicPartitionFilter],
+    ) -> Result<OffsetDeleteResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "OffsetDelete"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_offset_delete_request(
+                correlation_id,
+                &self.config.client_id,
+                group,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_OFFSET_DELETE,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::OffsetDeleteResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_OFFSET_DELETE,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_offset_delete_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "OffsetDelete")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
 
     /// Commit offset for a topic partitions on behalf of a consumer group.
     ///

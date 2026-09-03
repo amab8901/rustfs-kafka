@@ -8,8 +8,9 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_DESCRIBE_ACLS,
-    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_DELETE_ACLS,
+    API_VERSION_DELETE_GROUPS, API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
     API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
@@ -17,7 +18,8 @@ use crate::protocol::{
     API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_CONFIG_RESOURCES,
     API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
     API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
-    API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE, API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
+    API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 use tracing::{debug, info};
 
@@ -37,10 +39,14 @@ pub mod api_key {
     pub const LIST_GROUPS: i16 = 16;
     pub const API_VERSIONS: i16 = 18;
     pub const DESCRIBE_ACLS: i16 = 29;
+    pub const CREATE_ACLS: i16 = 30;
+    pub const DELETE_ACLS: i16 = 31;
     pub const DESCRIBE_CONFIGS: i16 = 32;
     pub const DESCRIBE_LOG_DIRS: i16 = 35;
     pub const DESCRIBE_DELEGATION_TOKEN: i16 = 41;
+    pub const DELETE_GROUPS: i16 = 42;
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
+    pub const OFFSET_DELETE: i16 = 47;
     pub const DESCRIBE_CLIENT_QUOTAS: i16 = 48;
     pub const DESCRIBE_USER_SCRAM_CREDENTIALS: i16 = 50;
     pub const DESCRIBE_QUORUM: i16 = 55;
@@ -320,10 +326,14 @@ impl ApiVersionCache {
             api_key::DESCRIBE_GROUPS => API_VERSION_DESCRIBE_GROUPS,
             api_key::LIST_GROUPS => API_VERSION_LIST_GROUPS,
             api_key::DESCRIBE_ACLS => API_VERSION_DESCRIBE_ACLS,
+            api_key::CREATE_ACLS => API_VERSION_CREATE_ACLS,
+            api_key::DELETE_ACLS => API_VERSION_DELETE_ACLS,
             api_key::DESCRIBE_CONFIGS => API_VERSION_DESCRIBE_CONFIGS,
             api_key::DESCRIBE_LOG_DIRS => API_VERSION_DESCRIBE_LOG_DIRS,
             api_key::DESCRIBE_DELEGATION_TOKEN => API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+            api_key::DELETE_GROUPS => API_VERSION_DELETE_GROUPS,
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            api_key::OFFSET_DELETE => API_VERSION_OFFSET_DELETE,
             api_key::DESCRIBE_CLIENT_QUOTAS => API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             api_key::DESCRIBE_USER_SCRAM_CREDENTIALS => API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             api_key::DESCRIBE_QUORUM => API_VERSION_DESCRIBE_QUORUM,
@@ -375,16 +385,20 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
         describe_groups: version!(DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS),
         list_groups: version!(LIST_GROUPS, API_VERSION_LIST_GROUPS),
         describe_acls: version!(DESCRIBE_ACLS, API_VERSION_DESCRIBE_ACLS),
+        create_acls: version!(CREATE_ACLS, API_VERSION_CREATE_ACLS),
+        delete_acls: version!(DELETE_ACLS, API_VERSION_DELETE_ACLS),
         describe_configs: version!(DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
         describe_log_dirs: version!(DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
         describe_delegation_token: version!(
             DESCRIBE_DELEGATION_TOKEN,
             API_VERSION_DESCRIBE_DELEGATION_TOKEN
         ),
+        delete_groups: version!(DELETE_GROUPS, API_VERSION_DELETE_GROUPS),
         list_partition_reassignments: version!(
             LIST_PARTITION_REASSIGNMENTS,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
         ),
+        offset_delete: version!(OFFSET_DELETE, API_VERSION_OFFSET_DELETE),
         describe_client_quotas: version!(
             DESCRIBE_CLIENT_QUOTAS,
             API_VERSION_DESCRIBE_CLIENT_QUOTAS
@@ -429,10 +443,14 @@ pub struct ApiVersions {
     pub describe_groups: i16,
     pub list_groups: i16,
     pub describe_acls: i16,
+    pub create_acls: i16,
+    pub delete_acls: i16,
     pub describe_configs: i16,
     pub describe_log_dirs: i16,
     pub describe_delegation_token: i16,
+    pub delete_groups: i16,
     pub list_partition_reassignments: i16,
+    pub offset_delete: i16,
     pub describe_client_quotas: i16,
     pub describe_user_scram_credentials: i16,
     pub describe_quorum: i16,
@@ -460,10 +478,14 @@ impl Default for ApiVersions {
             describe_groups: API_VERSION_DESCRIBE_GROUPS,
             list_groups: API_VERSION_LIST_GROUPS,
             describe_acls: API_VERSION_DESCRIBE_ACLS,
+            create_acls: API_VERSION_CREATE_ACLS,
+            delete_acls: API_VERSION_DELETE_ACLS,
             describe_configs: API_VERSION_DESCRIBE_CONFIGS,
             describe_log_dirs: API_VERSION_DESCRIBE_LOG_DIRS,
             describe_delegation_token: API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+            delete_groups: API_VERSION_DELETE_GROUPS,
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            offset_delete: API_VERSION_OFFSET_DELETE,
             describe_client_quotas: API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             describe_user_scram_credentials: API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             describe_quorum: API_VERSION_DESCRIBE_QUORUM,
@@ -615,16 +637,20 @@ mod tests {
         assert_eq!(v.describe_groups, API_VERSION_DESCRIBE_GROUPS);
         assert_eq!(v.list_groups, API_VERSION_LIST_GROUPS);
         assert_eq!(v.describe_acls, API_VERSION_DESCRIBE_ACLS);
+        assert_eq!(v.create_acls, API_VERSION_CREATE_ACLS);
+        assert_eq!(v.delete_acls, API_VERSION_DELETE_ACLS);
         assert_eq!(v.describe_configs, API_VERSION_DESCRIBE_CONFIGS);
         assert_eq!(v.describe_log_dirs, API_VERSION_DESCRIBE_LOG_DIRS);
         assert_eq!(
             v.describe_delegation_token,
             API_VERSION_DESCRIBE_DELEGATION_TOKEN
         );
+        assert_eq!(v.delete_groups, API_VERSION_DELETE_GROUPS);
         assert_eq!(
             v.list_partition_reassignments,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
         );
+        assert_eq!(v.offset_delete, API_VERSION_OFFSET_DELETE);
         assert_eq!(v.describe_client_quotas, API_VERSION_DESCRIBE_CLIENT_QUOTAS);
         assert_eq!(
             v.describe_user_scram_credentials,
@@ -666,13 +692,17 @@ mod tests {
         assert_eq!(v.describe_groups, d.describe_groups);
         assert_eq!(v.list_groups, d.list_groups);
         assert_eq!(v.describe_acls, d.describe_acls);
+        assert_eq!(v.create_acls, d.create_acls);
+        assert_eq!(v.delete_acls, d.delete_acls);
         assert_eq!(v.describe_configs, d.describe_configs);
         assert_eq!(v.describe_log_dirs, d.describe_log_dirs);
         assert_eq!(v.describe_delegation_token, d.describe_delegation_token);
+        assert_eq!(v.delete_groups, d.delete_groups);
         assert_eq!(
             v.list_partition_reassignments,
             d.list_partition_reassignments
         );
+        assert_eq!(v.offset_delete, d.offset_delete);
         assert_eq!(v.describe_client_quotas, d.describe_client_quotas);
         assert_eq!(
             v.describe_user_scram_credentials,
@@ -706,16 +736,20 @@ mod tests {
             (api_key::DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS),
             (api_key::LIST_GROUPS, API_VERSION_LIST_GROUPS),
             (api_key::DESCRIBE_ACLS, API_VERSION_DESCRIBE_ACLS),
+            (api_key::CREATE_ACLS, API_VERSION_CREATE_ACLS),
+            (api_key::DELETE_ACLS, API_VERSION_DELETE_ACLS),
             (api_key::DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
             (api_key::DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
             (
                 api_key::DESCRIBE_DELEGATION_TOKEN,
                 API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             ),
+            (api_key::DELETE_GROUPS, API_VERSION_DELETE_GROUPS),
             (
                 api_key::LIST_PARTITION_REASSIGNMENTS,
                 API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             ),
+            (api_key::OFFSET_DELETE, API_VERSION_OFFSET_DELETE),
             (
                 api_key::DESCRIBE_CLIENT_QUOTAS,
                 API_VERSION_DESCRIBE_CLIENT_QUOTAS,

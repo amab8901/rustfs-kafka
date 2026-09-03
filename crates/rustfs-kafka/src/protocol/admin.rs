@@ -1,33 +1,37 @@
-//! Read-only Kafka administration protocol helpers.
+//! Kafka administration protocol helpers.
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    ApiKey, ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse, DescribeAclsRequest,
-    DescribeAclsResponse, DescribeClientQuotasRequest, DescribeClientQuotasResponse,
-    DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
-    DescribeConfigsResponse, DescribeDelegationTokenRequest, DescribeDelegationTokenResponse,
-    DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
-    DescribeProducersRequest, DescribeProducersResponse, DescribeQuorumRequest,
-    DescribeQuorumResponse, DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
+    ApiKey, ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse, CreateAclsRequest,
+    CreateAclsResponse, DeleteAclsRequest, DeleteAclsResponse, DeleteGroupsRequest,
+    DeleteGroupsResponse, DescribeAclsRequest, DescribeAclsResponse, DescribeClientQuotasRequest,
+    DescribeClientQuotasResponse, DescribeClusterRequest, DescribeClusterResponse,
+    DescribeConfigsRequest, DescribeConfigsResponse, DescribeDelegationTokenRequest,
+    DescribeDelegationTokenResponse, DescribeGroupsRequest, DescribeGroupsResponse,
+    DescribeLogDirsRequest, DescribeLogDirsResponse, DescribeProducersRequest,
+    DescribeProducersResponse, DescribeQuorumRequest, DescribeQuorumResponse,
+    DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
     DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse, DescribeTransactionsRequest,
     DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
     DescribeUserScramCredentialsResponse, GroupId, ListConfigResourcesRequest,
     ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
     ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
-    ListTransactionsResponse, RequestHeader, ShareGroupDescribeRequest, ShareGroupDescribeResponse,
+    ListTransactionsResponse, OffsetDeleteRequest, OffsetDeleteResponse, RequestHeader,
+    ShareGroupDescribeRequest, ShareGroupDescribeResponse,
 };
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
-    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_DESCRIBE_ACLS,
-    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS, API_VERSION_DELETE_ACLS,
+    API_VERSION_DELETE_GROUPS, API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
     API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
     API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
     API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
     API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
-    API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_OFFSET_DELETE, API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -185,6 +189,35 @@ impl TopicPartitionFilter {
             partitions: partitions.into_iter().collect(),
         }
     }
+}
+
+/// Per-partition result returned by `OffsetDelete`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetDeletePartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+}
+
+/// Per-topic result returned by `OffsetDelete`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetDeleteTopicResult {
+    /// Topic name.
+    pub name: String,
+    /// Partition-level offset deletion results.
+    pub partitions: Vec<OffsetDeletePartitionResult>,
+}
+
+/// Parsed response from an `OffsetDelete` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetDeleteResponseData {
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Topic-level offset deletion results returned by the broker.
+    pub topics: Vec<OffsetDeleteTopicResult>,
 }
 
 /// Cursor used to page through `DescribeTopicPartitions` results.
@@ -513,6 +546,49 @@ impl DescribeAclsFilter {
     }
 }
 
+/// One ACL binding to create with `CreateAcls`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AclBinding {
+    /// Raw Kafka ACL resource type.
+    pub resource_type: i8,
+    /// Resource name for the ACL.
+    pub resource_name: String,
+    /// Raw Kafka ACL resource pattern type.
+    pub resource_pattern_type: i8,
+    /// ACL principal string, such as `User:alice`.
+    pub principal: String,
+    /// Host to which the ACL applies.
+    pub host: String,
+    /// Raw Kafka ACL operation code.
+    pub operation: i8,
+    /// Raw Kafka ACL permission type code.
+    pub permission_type: i8,
+}
+
+impl AclBinding {
+    /// Create an ACL binding with all Kafka ACL fields supplied explicitly.
+    #[must_use]
+    pub fn new(
+        resource_type: i8,
+        resource_name: impl Into<String>,
+        resource_pattern_type: i8,
+        principal: impl Into<String>,
+        host: impl Into<String>,
+        operation: i8,
+        permission_type: i8,
+    ) -> Self {
+        Self {
+            resource_type,
+            resource_name: resource_name.into(),
+            resource_pattern_type,
+            principal: principal.into(),
+            host: host.into(),
+            operation,
+            permission_type,
+        }
+    }
+}
+
 /// One entity component used to filter `DescribeClientQuotas`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientQuotaEntityFilter {
@@ -711,6 +787,24 @@ pub struct ListGroupsResponseData {
     pub error_code: i16,
     /// Groups returned by the broker.
     pub groups: Vec<ListedGroup>,
+}
+
+/// Result of one group deletion returned by `DeleteGroups`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedGroup {
+    /// Group ID.
+    pub group_id: String,
+    /// Broker error code for this group deletion.
+    pub error_code: i16,
+}
+
+/// Parsed response from a `DeleteGroups` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteGroupsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-group deletion results returned by the broker.
+    pub results: Vec<DeletedGroup>,
 }
 
 /// A member returned by `DescribeGroups`.
@@ -1164,6 +1258,67 @@ pub struct DescribeAclsResponseData {
     pub resources: Vec<AclResource>,
 }
 
+/// Result of one ACL creation returned by `CreateAcls`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAclResult {
+    /// Broker error code for this ACL creation.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Parsed response from a `CreateAcls` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAclsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-ACL creation results returned by the broker.
+    pub results: Vec<CreateAclResult>,
+}
+
+/// One ACL matched and deleted by a `DeleteAcls` filter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedAcl {
+    /// Per-ACL deletion error code.
+    pub error_code: i16,
+    /// Optional per-ACL deletion error message.
+    pub error_message: Option<String>,
+    /// Raw Kafka ACL resource type.
+    pub resource_type: i8,
+    /// Resource name.
+    pub resource_name: String,
+    /// Raw Kafka ACL resource pattern type.
+    pub pattern_type: i8,
+    /// ACL principal string, such as `User:alice`.
+    pub principal: String,
+    /// Host to which the ACL applied.
+    pub host: String,
+    /// Raw Kafka ACL operation code.
+    pub operation: i8,
+    /// Raw Kafka ACL permission type code.
+    pub permission_type: i8,
+}
+
+/// Result for one `DeleteAcls` filter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteAclsFilterResult {
+    /// Per-filter broker error code.
+    pub error_code: i16,
+    /// Optional per-filter broker error message.
+    pub error_message: Option<String>,
+    /// ACLs that matched the filter and were deleted or attempted.
+    pub matching_acls: Vec<DeletedAcl>,
+}
+
+/// Parsed response from a `DeleteAcls` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteAclsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-filter delete results returned by the broker.
+    pub filter_results: Vec<DeleteAclsFilterResult>,
+}
+
 /// One delegation token returned by `DescribeDelegationToken`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DelegationTokenDescription {
@@ -1423,6 +1578,24 @@ pub fn build_list_groups_request(
     (header, request)
 }
 
+/// Build a `DeleteGroups` request.
+pub fn build_delete_groups_request(
+    correlation_id: i32,
+    client_id: &str,
+    groups: &[&str],
+) -> (RequestHeader, DeleteGroupsRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DeleteGroups,
+        API_VERSION_DELETE_GROUPS,
+    );
+    let request = DeleteGroupsRequest::default()
+        .with_groups_names(groups.iter().map(|group| group_id(group)).collect());
+
+    (header, request)
+}
+
 /// Build a `DescribeGroups` request.
 pub fn build_describe_groups_request(
     correlation_id: i32,
@@ -1478,6 +1651,85 @@ pub fn build_describe_acls_request(
         )
         .with_operation(filter.operation)
         .with_permission_type(filter.permission_type);
+
+    (header, request)
+}
+
+/// Build a `CreateAcls` request.
+pub fn build_create_acls_request(
+    correlation_id: i32,
+    client_id: &str,
+    bindings: &[AclBinding],
+) -> (RequestHeader, CreateAclsRequest) {
+    use kafka_protocol::messages::create_acls_request::AclCreation;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::CreateAcls,
+        API_VERSION_CREATE_ACLS,
+    );
+    let creations = bindings
+        .iter()
+        .map(|binding| {
+            AclCreation::default()
+                .with_resource_type(binding.resource_type)
+                .with_resource_name(StrBytes::from_string(binding.resource_name.clone()))
+                .with_resource_pattern_type(binding.resource_pattern_type)
+                .with_principal(StrBytes::from_string(binding.principal.clone()))
+                .with_host(StrBytes::from_string(binding.host.clone()))
+                .with_operation(binding.operation)
+                .with_permission_type(binding.permission_type)
+        })
+        .collect();
+    let request = CreateAclsRequest::default().with_creations(creations);
+
+    (header, request)
+}
+
+/// Build a `DeleteAcls` request.
+pub fn build_delete_acls_request(
+    correlation_id: i32,
+    client_id: &str,
+    filters: &[DescribeAclsFilter],
+) -> (RequestHeader, DeleteAclsRequest) {
+    use kafka_protocol::messages::delete_acls_request::DeleteAclsFilter as KafkaDeleteAclsFilter;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DeleteAcls,
+        API_VERSION_DELETE_ACLS,
+    );
+    let filters = filters
+        .iter()
+        .map(|filter| {
+            KafkaDeleteAclsFilter::default()
+                .with_resource_type_filter(filter.resource_type_filter)
+                .with_resource_name_filter(
+                    filter
+                        .resource_name_filter
+                        .as_ref()
+                        .map(|name| StrBytes::from_string(name.clone())),
+                )
+                .with_pattern_type_filter(filter.pattern_type_filter)
+                .with_principal_filter(
+                    filter
+                        .principal_filter
+                        .as_ref()
+                        .map(|principal| StrBytes::from_string(principal.clone())),
+                )
+                .with_host_filter(
+                    filter
+                        .host_filter
+                        .as_ref()
+                        .map(|host| StrBytes::from_string(host.clone())),
+                )
+                .with_operation(filter.operation)
+                .with_permission_type(filter.permission_type)
+        })
+        .collect();
+    let request = DeleteAclsRequest::default().with_filters(filters);
 
     (header, request)
 }
@@ -1885,6 +2137,47 @@ pub fn build_describe_producers_request(
     (header, request)
 }
 
+/// Build an `OffsetDelete` request for deleting committed group offsets.
+pub fn build_offset_delete_request(
+    correlation_id: i32,
+    client_id: &str,
+    group: &str,
+    topics: &[TopicPartitionFilter],
+) -> (RequestHeader, OffsetDeleteRequest) {
+    use kafka_protocol::messages::offset_delete_request::{
+        OffsetDeleteRequestPartition, OffsetDeleteRequestTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::OffsetDelete,
+        API_VERSION_OFFSET_DELETE,
+    );
+    let topics = topics
+        .iter()
+        .map(|topic| {
+            OffsetDeleteRequestTopic::default()
+                .with_name(StrBytes::from_string(topic.topic.clone()).into())
+                .with_partitions(
+                    topic
+                        .partitions
+                        .iter()
+                        .copied()
+                        .map(|partition| {
+                            OffsetDeleteRequestPartition::default().with_partition_index(partition)
+                        })
+                        .collect(),
+                )
+        })
+        .collect();
+    let request = OffsetDeleteRequest::default()
+        .with_group_id(group_id(group))
+        .with_topics(topics);
+
+    (header, request)
+}
+
 /// Build a `ListTransactions` request.
 pub fn build_list_transactions_request(
     correlation_id: i32,
@@ -1990,6 +2283,21 @@ pub fn convert_list_groups_response(response: ListGroupsResponse) -> ListGroupsR
     }
 }
 
+/// Convert a generated `DeleteGroupsResponse` into the crate's public shape.
+pub fn convert_delete_groups_response(response: DeleteGroupsResponse) -> DeleteGroupsResponseData {
+    DeleteGroupsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        results: response
+            .results
+            .into_iter()
+            .map(|result| DeletedGroup {
+                group_id: result.group_id.to_string(),
+                error_code: result.error_code,
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeGroupsResponse` into the crate's public shape.
 pub fn convert_describe_groups_response(
     response: DescribeGroupsResponse,
@@ -2043,6 +2351,53 @@ pub fn convert_describe_acls_response(response: DescribeAclsResponse) -> Describ
                     .acls
                     .into_iter()
                     .map(|acl| AclDescription {
+                        principal: acl.principal.to_string(),
+                        host: acl.host.to_string(),
+                        operation: acl.operation,
+                        permission_type: acl.permission_type,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `CreateAclsResponse` into the crate's public shape.
+pub fn convert_create_acls_response(response: CreateAclsResponse) -> CreateAclsResponseData {
+    CreateAclsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        results: response
+            .results
+            .into_iter()
+            .map(|result| CreateAclResult {
+                error_code: result.error_code,
+                error_message: result.error_message.map(|message| message.to_string()),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `DeleteAclsResponse` into the crate's public shape.
+pub fn convert_delete_acls_response(response: DeleteAclsResponse) -> DeleteAclsResponseData {
+    DeleteAclsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        filter_results: response
+            .filter_results
+            .into_iter()
+            .map(|filter_result| DeleteAclsFilterResult {
+                error_code: filter_result.error_code,
+                error_message: filter_result
+                    .error_message
+                    .map(|message| message.to_string()),
+                matching_acls: filter_result
+                    .matching_acls
+                    .into_iter()
+                    .map(|acl| DeletedAcl {
+                        error_code: acl.error_code,
+                        error_message: acl.error_message.map(|message| message.to_string()),
+                        resource_type: acl.resource_type,
+                        resource_name: acl.resource_name.to_string(),
+                        pattern_type: acl.pattern_type,
                         principal: acl.principal.to_string(),
                         host: acl.host.to_string(),
                         operation: acl.operation,
@@ -2605,6 +2960,29 @@ pub fn convert_describe_producers_response(
     }
 }
 
+/// Convert a generated `OffsetDeleteResponse` into the crate's public shape.
+pub fn convert_offset_delete_response(response: OffsetDeleteResponse) -> OffsetDeleteResponseData {
+    OffsetDeleteResponseData {
+        error_code: response.error_code,
+        throttle_time_ms: response.throttle_time_ms,
+        topics: response
+            .topics
+            .into_iter()
+            .map(|topic| OffsetDeleteTopicResult {
+                name: topic.name.to_string(),
+                partitions: topic
+                    .partitions
+                    .into_iter()
+                    .map(|partition| OffsetDeletePartitionResult {
+                        partition_index: partition.partition_index,
+                        error_code: partition.error_code,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `ListTransactionsResponse` into the crate's public shape.
 pub fn convert_list_transactions_response(
     response: ListTransactionsResponse,
@@ -2694,6 +3072,12 @@ mod tests {
         Assignment as KpConsumerGroupAssignment, DescribedGroup as KpConsumerGroupDescription,
         Member as KpConsumerGroupMember, TopicPartitions as KpConsumerGroupTopicPartitions,
     };
+    use kafka_protocol::messages::create_acls_response::AclCreationResult as KpAclCreationResult;
+    use kafka_protocol::messages::delete_acls_response::{
+        DeleteAclsFilterResult as KpDeleteAclsFilterResult,
+        DeleteAclsMatchingAcl as KpDeleteAclsMatchingAcl,
+    };
+    use kafka_protocol::messages::delete_groups_response::DeletableGroupResult as KpDeletableGroupResult;
     use kafka_protocol::messages::describe_acls_response::{
         AclDescription as KpAclDescription, DescribeAclsResource as KpAclResource,
     };
@@ -2751,6 +3135,10 @@ mod tests {
         OngoingTopicReassignment as KpOngoingTopicReassignment,
     };
     use kafka_protocol::messages::list_transactions_response::TransactionState as KpListedTransactionState;
+    use kafka_protocol::messages::offset_delete_response::{
+        OffsetDeleteResponsePartition as KpOffsetDeletePartition,
+        OffsetDeleteResponseTopic as KpOffsetDeleteTopic,
+    };
     use kafka_protocol::messages::share_group_describe_response::{
         Assignment as KpShareGroupAssignment, DescribedGroup as KpShareGroupDescription,
         Member as KpShareGroupMember, TopicPartitions as KpShareGroupTopicPartitions,
@@ -2791,9 +3179,19 @@ mod tests {
     }
 
     #[test]
+    fn delete_groups_request_includes_group_ids() {
+        let (header, request) = build_delete_groups_request(8, "client-c", &["group-a", "group-b"]);
+
+        assert_eq!(header.request_api_key, ApiKey::DeleteGroups as i16);
+        assert_eq!(header.request_api_version, API_VERSION_DELETE_GROUPS);
+        assert_eq!(request.groups_names[0].to_string(), "group-a");
+        assert_eq!(request.groups_names[1].to_string(), "group-b");
+    }
+
+    #[test]
     fn describe_groups_request_includes_authorized_operations_flag() {
         let (header, request) =
-            build_describe_groups_request(8, "client-c", &["group-a", "group-b"], true);
+            build_describe_groups_request(9, "client-c", &["group-a", "group-b"], true);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeGroups as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_GROUPS);
@@ -2835,6 +3233,67 @@ mod tests {
         );
         assert_eq!(request.operation, ACL_OPERATION_READ);
         assert_eq!(request.permission_type, ACL_PERMISSION_TYPE_ALLOW);
+    }
+
+    #[test]
+    fn create_acls_request_preserves_binding_fields() {
+        let binding = AclBinding::new(
+            ACL_RESOURCE_TYPE_TOPIC,
+            "topic-a",
+            ACL_PATTERN_TYPE_LITERAL,
+            "User:alice",
+            "*",
+            ACL_OPERATION_READ,
+            ACL_PERMISSION_TYPE_ALLOW,
+        );
+        let (header, request) = build_create_acls_request(10, "client-d", &[binding]);
+
+        assert_eq!(header.request_api_key, ApiKey::CreateAcls as i16);
+        assert_eq!(header.request_api_version, API_VERSION_CREATE_ACLS);
+        let creation = &request.creations[0];
+        assert_eq!(creation.resource_type, ACL_RESOURCE_TYPE_TOPIC);
+        assert_eq!(creation.resource_name.to_string(), "topic-a");
+        assert_eq!(creation.resource_pattern_type, ACL_PATTERN_TYPE_LITERAL);
+        assert_eq!(creation.principal.to_string(), "User:alice");
+        assert_eq!(creation.host.to_string(), "*");
+        assert_eq!(creation.operation, ACL_OPERATION_READ);
+        assert_eq!(creation.permission_type, ACL_PERMISSION_TYPE_ALLOW);
+    }
+
+    #[test]
+    fn delete_acls_request_uses_describe_acl_filters() {
+        let filter = DescribeAclsFilter::any()
+            .with_resource_type(ACL_RESOURCE_TYPE_GROUP)
+            .with_resource_name("group-a")
+            .with_pattern_type(ACL_PATTERN_TYPE_LITERAL)
+            .with_principal("User:bob")
+            .with_host("127.0.0.1")
+            .with_operation(ACL_OPERATION_DESCRIBE)
+            .with_permission_type(ACL_PERMISSION_TYPE_DENY);
+        let (header, request) = build_delete_acls_request(11, "client-e", &[filter]);
+
+        assert_eq!(header.request_api_key, ApiKey::DeleteAcls as i16);
+        assert_eq!(header.request_api_version, API_VERSION_DELETE_ACLS);
+        let filter = &request.filters[0];
+        assert_eq!(filter.resource_type_filter, ACL_RESOURCE_TYPE_GROUP);
+        assert_eq!(
+            filter
+                .resource_name_filter
+                .as_ref()
+                .map(ToString::to_string),
+            Some("group-a".to_owned())
+        );
+        assert_eq!(filter.pattern_type_filter, ACL_PATTERN_TYPE_LITERAL);
+        assert_eq!(
+            filter.principal_filter.as_ref().map(ToString::to_string),
+            Some("User:bob".to_owned())
+        );
+        assert_eq!(
+            filter.host_filter.as_ref().map(ToString::to_string),
+            Some("127.0.0.1".to_owned())
+        );
+        assert_eq!(filter.operation, ACL_OPERATION_DESCRIBE);
+        assert_eq!(filter.permission_type, ACL_PERMISSION_TYPE_DENY);
     }
 
     #[test]
@@ -3109,13 +3568,31 @@ mod tests {
     }
 
     #[test]
+    fn offset_delete_request_uses_topic_partition_filters() {
+        let filters = [
+            TopicPartitionFilter::new("topic-a", [0, 2]),
+            TopicPartitionFilter::new("topic-b", [1]),
+        ];
+        let (header, request) = build_offset_delete_request(27, "client-v", "group-a", &filters);
+
+        assert_eq!(header.request_api_key, ApiKey::OffsetDelete as i16);
+        assert_eq!(header.request_api_version, API_VERSION_OFFSET_DELETE);
+        assert_eq!(request.group_id.to_string(), "group-a");
+        assert_eq!(request.topics[0].name.to_string(), "topic-a");
+        assert_eq!(request.topics[0].partitions[0].partition_index, 0);
+        assert_eq!(request.topics[0].partitions[1].partition_index, 2);
+        assert_eq!(request.topics[1].name.to_string(), "topic-b");
+        assert_eq!(request.topics[1].partitions[0].partition_index, 1);
+    }
+
+    #[test]
     fn list_transactions_request_accepts_all_filters() {
         let options = ListTransactionsOptions::new()
             .with_state_filters(["Ongoing", "PrepareCommit"])
             .with_producer_id_filters([42, 43])
             .with_duration_filter_ms(30_000)
             .with_transactional_id_pattern("rustfs-.*");
-        let (header, request) = build_list_transactions_request(27, "client-v", &options);
+        let (header, request) = build_list_transactions_request(28, "client-w", &options);
 
         assert_eq!(header.request_api_key, ApiKey::ListTransactions as i16);
         assert_eq!(header.request_api_version, API_VERSION_LIST_TRANSACTIONS);
@@ -3226,6 +3703,39 @@ mod tests {
     }
 
     #[test]
+    fn convert_delete_groups_response_preserves_results() {
+        let response = DeleteGroupsResponse::default()
+            .with_throttle_time_ms(12)
+            .with_results(vec![
+                KpDeletableGroupResult::default()
+                    .with_group_id(group_id("group-a"))
+                    .with_error_code(0),
+                KpDeletableGroupResult::default()
+                    .with_group_id(group_id("group-b"))
+                    .with_error_code(15),
+            ]);
+
+        let converted = convert_delete_groups_response(response);
+
+        assert_eq!(
+            converted,
+            DeleteGroupsResponseData {
+                throttle_time_ms: 12,
+                results: vec![
+                    DeletedGroup {
+                        group_id: "group-a".to_owned(),
+                        error_code: 0,
+                    },
+                    DeletedGroup {
+                        group_id: "group-b".to_owned(),
+                        error_code: 15,
+                    },
+                ],
+            }
+        );
+    }
+
+    #[test]
     fn convert_describe_groups_response_preserves_members_and_authorizations() {
         let response = DescribeGroupsResponse::default()
             .with_throttle_time_ms(12)
@@ -3307,6 +3817,73 @@ mod tests {
             converted.resources[0].acls[0].permission_type,
             ACL_PERMISSION_TYPE_ALLOW
         );
+    }
+
+    #[test]
+    fn convert_create_acls_response_preserves_results() {
+        let response = CreateAclsResponse::default()
+            .with_throttle_time_ms(14)
+            .with_results(vec![
+                KpAclCreationResult::default()
+                    .with_error_code(0)
+                    .with_error_message(None),
+                KpAclCreationResult::default()
+                    .with_error_code(31)
+                    .with_error_message(Some(StrBytes::from_static_str("duplicate"))),
+            ]);
+
+        let converted = convert_create_acls_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 14);
+        assert_eq!(
+            converted.results,
+            vec![
+                CreateAclResult {
+                    error_code: 0,
+                    error_message: None,
+                },
+                CreateAclResult {
+                    error_code: 31,
+                    error_message: Some("duplicate".to_owned()),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn convert_delete_acls_response_preserves_matching_acls() {
+        let response = DeleteAclsResponse::default()
+            .with_throttle_time_ms(15)
+            .with_filter_results(vec![
+                KpDeleteAclsFilterResult::default()
+                    .with_error_code(0)
+                    .with_error_message(None)
+                    .with_matching_acls(vec![
+                        KpDeleteAclsMatchingAcl::default()
+                            .with_error_code(0)
+                            .with_error_message(None)
+                            .with_resource_type(ACL_RESOURCE_TYPE_TOPIC)
+                            .with_resource_name(StrBytes::from_static_str("topic-a"))
+                            .with_pattern_type(ACL_PATTERN_TYPE_LITERAL)
+                            .with_principal(StrBytes::from_static_str("User:alice"))
+                            .with_host(StrBytes::from_static_str("*"))
+                            .with_operation(ACL_OPERATION_READ)
+                            .with_permission_type(ACL_PERMISSION_TYPE_ALLOW),
+                    ]),
+            ]);
+
+        let converted = convert_delete_acls_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 15);
+        assert_eq!(converted.filter_results[0].error_code, 0);
+        let acl = &converted.filter_results[0].matching_acls[0];
+        assert_eq!(acl.resource_type, ACL_RESOURCE_TYPE_TOPIC);
+        assert_eq!(acl.resource_name, "topic-a");
+        assert_eq!(acl.pattern_type, ACL_PATTERN_TYPE_LITERAL);
+        assert_eq!(acl.principal, "User:alice");
+        assert_eq!(acl.host, "*");
+        assert_eq!(acl.operation, ACL_OPERATION_READ);
+        assert_eq!(acl.permission_type, ACL_PERMISSION_TYPE_ALLOW);
     }
 
     #[test]
@@ -3763,6 +4340,44 @@ mod tests {
         assert_eq!(partition.leader_epoch, 7);
         assert_eq!(partition.error_code, 0);
         assert_eq!(partition.error_message, Some("ok".to_owned()));
+    }
+
+    #[test]
+    fn convert_offset_delete_response_preserves_partition_results() {
+        let response = OffsetDeleteResponse::default()
+            .with_error_code(0)
+            .with_throttle_time_ms(28)
+            .with_topics(vec![
+                KpOffsetDeleteTopic::default()
+                    .with_name(StrBytes::from_static_str("topic-a").into())
+                    .with_partitions(vec![
+                        KpOffsetDeletePartition::default()
+                            .with_partition_index(0)
+                            .with_error_code(0),
+                        KpOffsetDeletePartition::default()
+                            .with_partition_index(2)
+                            .with_error_code(15),
+                    ]),
+            ]);
+
+        let converted = convert_offset_delete_response(response);
+
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.throttle_time_ms, 28);
+        assert_eq!(converted.topics[0].name, "topic-a");
+        assert_eq!(
+            converted.topics[0].partitions,
+            vec![
+                OffsetDeletePartitionResult {
+                    partition_index: 0,
+                    error_code: 0,
+                },
+                OffsetDeletePartitionResult {
+                    partition_index: 2,
+                    error_code: 15,
+                },
+            ]
+        );
     }
 
     #[test]
