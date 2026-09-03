@@ -133,9 +133,9 @@ use std::time::Duration;
 use rustfs_kafka::client::{
     ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
     DescribeTopicPartitionsOptions, KafkaClient, KafkaPrincipal, ListTransactionsOptions,
-    TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ, ACL_PATTERN_TYPE_LITERAL,
-    ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER,
-    CONFIG_RESOURCE_TYPE_TOPIC,
+    ShareGroupOffsetRequest, TopicPartitionFilter, TopicPartitionsCursor, ACL_OPERATION_READ,
+    ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
+    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_TOPIC,
 };
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
@@ -173,6 +173,18 @@ let consumer_groups = client
 for group in consumer_groups.groups {
     println!(
         "consumer_group={} epoch={} members={}",
+        group.group_id,
+        group.group_epoch,
+        group.members.len()
+    );
+}
+
+let share_groups = client
+    .describe_share_groups_with_options(&["my-share-group"], true)
+    .unwrap();
+for group in share_groups.groups {
+    println!(
+        "share_group={} epoch={} members={}",
         group.group_id,
         group.group_epoch,
         group.members.len()
@@ -280,6 +292,15 @@ for topic in producers.topics {
     println!("topic={} producer_partitions={}", topic.name, topic.partitions.len());
 }
 
+let share_offsets = client
+    .describe_share_group_offsets_with_options(&[
+        ShareGroupOffsetRequest::with_topics("my-share-group", partitions.clone()),
+    ])
+    .unwrap();
+for group in share_offsets.groups {
+    println!("share_group={} offset_topics={}", group.group_id, group.topics.len());
+}
+
 let transaction_filter = ListTransactionsOptions::new()
     .with_state_filters(["Ongoing"])
     .with_duration_filter_ms(30_000)
@@ -311,6 +332,8 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `list_groups_with_filters(states_filter, types_filter)`
 - `describe_groups_with_options(groups, include_authorized_operations)`
 - `describe_consumer_groups_with_options(groups, include_authorized_operations)`
+- `describe_share_groups_with_options(groups, include_authorized_operations)`
+- `describe_share_group_offsets_with_options(groups)`
 - `describe_topic_partitions_with_options(options)`
 - `describe_acls_with_filter(filter)`
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`

@@ -8,12 +8,13 @@ use kafka_protocol::messages::{
     DescribeConfigsResponse, DescribeDelegationTokenRequest, DescribeDelegationTokenResponse,
     DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
     DescribeProducersRequest, DescribeProducersResponse, DescribeQuorumRequest,
-    DescribeQuorumResponse, DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse,
-    DescribeTransactionsRequest, DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
+    DescribeQuorumResponse, DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
+    DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse, DescribeTransactionsRequest,
+    DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
     DescribeUserScramCredentialsResponse, GroupId, ListConfigResourcesRequest,
     ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
     ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
-    ListTransactionsResponse, RequestHeader,
+    ListTransactionsResponse, RequestHeader, ShareGroupDescribeRequest, ShareGroupDescribeResponse,
 };
 use kafka_protocol::protocol::StrBytes;
 
@@ -22,10 +23,11 @@ use super::{
     API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
-    API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
-    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_LIST_CONFIG_RESOURCES,
-    API_VERSION_LIST_GROUPS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-    API_VERSION_LIST_TRANSACTIONS,
+    API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
+    API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -835,6 +837,155 @@ pub struct ConsumerGroupDescribeResponseData {
     pub groups: Vec<ConsumerGroupDescription>,
 }
 
+/// Topic partitions in a share group assignment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupTopicPartitions {
+    /// Topic UUID as a string.
+    pub topic_id: String,
+    /// Topic name.
+    pub topic_name: String,
+    /// Assigned partition indexes.
+    pub partitions: Vec<i32>,
+}
+
+/// Assignment returned by `ShareGroupDescribe`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupAssignment {
+    /// Topic partitions in the assignment.
+    pub topic_partitions: Vec<ShareGroupTopicPartitions>,
+}
+
+/// Member state returned by `ShareGroupDescribe`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupMemberDescription {
+    /// Member ID assigned by the share group coordinator.
+    pub member_id: String,
+    /// Rack ID reported by the member, when configured.
+    pub rack_id: Option<String>,
+    /// Current member epoch.
+    pub member_epoch: i32,
+    /// Client ID reported by the member.
+    pub client_id: String,
+    /// Client host reported by the broker.
+    pub client_host: String,
+    /// Subscribed topic names.
+    pub subscribed_topic_names: Vec<String>,
+    /// Current assignment.
+    pub assignment: ShareGroupAssignment,
+}
+
+/// Share group state returned by `ShareGroupDescribe`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupDescription {
+    /// Per-group broker error code.
+    pub error_code: i16,
+    /// Optional per-group broker error message.
+    pub error_message: Option<String>,
+    /// Group ID.
+    pub group_id: String,
+    /// Current group state.
+    pub group_state: String,
+    /// Current group epoch.
+    pub group_epoch: i32,
+    /// Current assignment epoch.
+    pub assignment_epoch: i32,
+    /// Selected assignor name.
+    pub assignor_name: String,
+    /// Members in the group.
+    pub members: Vec<ShareGroupMemberDescription>,
+    /// Authorized operations bitfield, or Kafka's sentinel when not requested.
+    pub authorized_operations: i32,
+}
+
+/// Parsed response from a `ShareGroupDescribe` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupDescribeResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Described share groups returned by the broker.
+    pub groups: Vec<ShareGroupDescription>,
+}
+
+/// One group included in a `DescribeShareGroupOffsets` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupOffsetRequest {
+    /// Share group ID.
+    pub group_id: String,
+    /// Topic partitions to query, or `None` to describe all share-partition offsets for the group.
+    pub topics: Option<Vec<TopicPartitionFilter>>,
+}
+
+impl ShareGroupOffsetRequest {
+    /// Describe all share-partition offsets for a group.
+    #[must_use]
+    pub fn all_partitions(group_id: impl Into<String>) -> Self {
+        Self {
+            group_id: group_id.into(),
+            topics: None,
+        }
+    }
+
+    /// Describe selected share-partition offsets for a group.
+    #[must_use]
+    pub fn with_topics<I>(group_id: impl Into<String>, topics: I) -> Self
+    where
+        I: IntoIterator<Item = TopicPartitionFilter>,
+    {
+        Self {
+            group_id: group_id.into(),
+            topics: Some(topics.into_iter().collect()),
+        }
+    }
+}
+
+/// Share group offset state for one partition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupOffsetPartition {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Share-partition start offset.
+    pub start_offset: i64,
+    /// Partition leader epoch.
+    pub leader_epoch: i32,
+    /// Per-partition broker error code.
+    pub error_code: i16,
+    /// Optional per-partition broker error message.
+    pub error_message: Option<String>,
+}
+
+/// Share group offset state for one topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupOffsetTopic {
+    /// Topic name.
+    pub topic_name: String,
+    /// Topic UUID as a string.
+    pub topic_id: String,
+    /// Partition offset states.
+    pub partitions: Vec<ShareGroupOffsetPartition>,
+}
+
+/// Share group offset state for one group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareGroupOffsetGroup {
+    /// Share group ID.
+    pub group_id: String,
+    /// Topic offset states returned by the broker.
+    pub topics: Vec<ShareGroupOffsetTopic>,
+    /// Per-group broker error code.
+    pub error_code: i16,
+    /// Optional per-group broker error message.
+    pub error_message: Option<String>,
+}
+
+/// Parsed response from a `DescribeShareGroupOffsets` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeShareGroupOffsetsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Per-group share offset states returned by the broker.
+    pub groups: Vec<ShareGroupOffsetGroup>,
+}
+
 /// A config synonym returned by `DescribeConfigs`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSynonym {
@@ -1526,6 +1677,26 @@ pub fn build_consumer_group_describe_request(
     (header, request)
 }
 
+/// Build a `ShareGroupDescribe` request.
+pub fn build_share_group_describe_request(
+    correlation_id: i32,
+    client_id: &str,
+    groups: &[&str],
+    include_authorized_operations: bool,
+) -> (RequestHeader, ShareGroupDescribeRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::ShareGroupDescribe,
+        API_VERSION_SHARE_GROUP_DESCRIBE,
+    );
+    let request = ShareGroupDescribeRequest::default()
+        .with_group_ids(groups.iter().map(|g| group_id(g)).collect())
+        .with_include_authorized_operations(include_authorized_operations);
+
+    (header, request)
+}
+
 /// Build a `ListConfigResources` request.
 pub fn build_list_config_resources_request(
     correlation_id: i32,
@@ -1574,6 +1745,45 @@ pub fn build_describe_topic_partitions_request(
         .with_topics(topics)
         .with_response_partition_limit(options.response_partition_limit)
         .with_cursor(cursor);
+
+    (header, request)
+}
+
+/// Build a `DescribeShareGroupOffsets` request.
+pub fn build_describe_share_group_offsets_request(
+    correlation_id: i32,
+    client_id: &str,
+    groups: &[ShareGroupOffsetRequest],
+) -> (RequestHeader, DescribeShareGroupOffsetsRequest) {
+    use kafka_protocol::messages::describe_share_group_offsets_request::{
+        DescribeShareGroupOffsetsRequestGroup, DescribeShareGroupOffsetsRequestTopic,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeShareGroupOffsets,
+        API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+    );
+    let groups = groups
+        .iter()
+        .map(|group| {
+            let topics = group.topics.as_ref().map(|topics| {
+                topics
+                    .iter()
+                    .map(|topic| {
+                        DescribeShareGroupOffsetsRequestTopic::default()
+                            .with_topic_name(StrBytes::from_string(topic.topic.clone()).into())
+                            .with_partitions(topic.partitions.clone())
+                    })
+                    .collect()
+            });
+            DescribeShareGroupOffsetsRequestGroup::default()
+                .with_group_id(group_id(&group.group_id))
+                .with_topics(topics)
+        })
+        .collect();
+    let request = DescribeShareGroupOffsetsRequest::default().with_groups(groups);
 
     (header, request)
 }
@@ -2138,6 +2348,62 @@ fn convert_consumer_group_assignment(
     }
 }
 
+/// Convert a generated `ShareGroupDescribeResponse` into the crate's public shape.
+pub fn convert_share_group_describe_response(
+    response: ShareGroupDescribeResponse,
+) -> ShareGroupDescribeResponseData {
+    ShareGroupDescribeResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        groups: response
+            .groups
+            .into_iter()
+            .map(|group| ShareGroupDescription {
+                error_code: group.error_code,
+                error_message: group.error_message.map(|message| message.to_string()),
+                group_id: group.group_id.to_string(),
+                group_state: group.group_state.to_string(),
+                group_epoch: group.group_epoch,
+                assignment_epoch: group.assignment_epoch,
+                assignor_name: group.assignor_name.to_string(),
+                members: group
+                    .members
+                    .into_iter()
+                    .map(|member| ShareGroupMemberDescription {
+                        member_id: member.member_id.to_string(),
+                        rack_id: member.rack_id.map(|rack_id| rack_id.to_string()),
+                        member_epoch: member.member_epoch,
+                        client_id: member.client_id.to_string(),
+                        client_host: member.client_host.to_string(),
+                        subscribed_topic_names: member
+                            .subscribed_topic_names
+                            .into_iter()
+                            .map(|topic_name| topic_name.to_string())
+                            .collect(),
+                        assignment: convert_share_group_assignment(member.assignment),
+                    })
+                    .collect(),
+                authorized_operations: group.authorized_operations,
+            })
+            .collect(),
+    }
+}
+
+fn convert_share_group_assignment(
+    assignment: kafka_protocol::messages::share_group_describe_response::Assignment,
+) -> ShareGroupAssignment {
+    ShareGroupAssignment {
+        topic_partitions: assignment
+            .topic_partitions
+            .into_iter()
+            .map(|topic| ShareGroupTopicPartitions {
+                topic_id: topic.topic_id.to_string(),
+                topic_name: topic.topic_name.to_string(),
+                partitions: topic.partitions,
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `ListConfigResourcesResponse` into the crate's public shape.
 pub fn convert_list_config_resources_response(
     response: ListConfigResourcesResponse,
@@ -2199,6 +2465,45 @@ pub fn convert_describe_topic_partitions_response(
 
 fn broker_ids_to_i32s(ids: Vec<kafka_protocol::messages::BrokerId>) -> Vec<i32> {
     ids.into_iter().map(i32::from).collect()
+}
+
+/// Convert a generated `DescribeShareGroupOffsetsResponse` into the crate's public shape.
+pub fn convert_describe_share_group_offsets_response(
+    response: DescribeShareGroupOffsetsResponse,
+) -> DescribeShareGroupOffsetsResponseData {
+    DescribeShareGroupOffsetsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        groups: response
+            .groups
+            .into_iter()
+            .map(|group| ShareGroupOffsetGroup {
+                group_id: group.group_id.to_string(),
+                topics: group
+                    .topics
+                    .into_iter()
+                    .map(|topic| ShareGroupOffsetTopic {
+                        topic_name: topic.topic_name.to_string(),
+                        topic_id: topic.topic_id.to_string(),
+                        partitions: topic
+                            .partitions
+                            .into_iter()
+                            .map(|partition| ShareGroupOffsetPartition {
+                                partition_index: partition.partition_index,
+                                start_offset: partition.start_offset,
+                                leader_epoch: partition.leader_epoch,
+                                error_code: partition.error_code,
+                                error_message: partition
+                                    .error_message
+                                    .map(|message| message.to_string()),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+                error_code: group.error_code,
+                error_message: group.error_message.map(|message| message.to_string()),
+            })
+            .collect(),
+    }
 }
 
 /// Convert a generated `DescribeClientQuotasResponse` into the crate's public shape.
@@ -2422,6 +2727,11 @@ mod tests {
         Listener as KpQuorumListener, Node as KpQuorumNode, PartitionData as KpQuorumPartition,
         ReplicaState as KpQuorumReplica, TopicData as KpQuorumTopic,
     };
+    use kafka_protocol::messages::describe_share_group_offsets_response::{
+        DescribeShareGroupOffsetsResponseGroup as KpShareGroupOffsetGroup,
+        DescribeShareGroupOffsetsResponsePartition as KpShareGroupOffsetPartition,
+        DescribeShareGroupOffsetsResponseTopic as KpShareGroupOffsetTopic,
+    };
     use kafka_protocol::messages::describe_topic_partitions_response::{
         Cursor as KpTopicPartitionsResponseCursor,
         DescribeTopicPartitionsResponsePartition as KpDescribedTopicPartition,
@@ -2441,6 +2751,10 @@ mod tests {
         OngoingTopicReassignment as KpOngoingTopicReassignment,
     };
     use kafka_protocol::messages::list_transactions_response::TransactionState as KpListedTransactionState;
+    use kafka_protocol::messages::share_group_describe_response::{
+        Assignment as KpShareGroupAssignment, DescribedGroup as KpShareGroupDescription,
+        Member as KpShareGroupMember, TopicPartitions as KpShareGroupTopicPartitions,
+    };
     use kafka_protocol::messages::{BrokerId, ProducerId};
 
     #[test]
@@ -2648,10 +2962,48 @@ mod tests {
     }
 
     #[test]
+    fn share_group_describe_request_includes_authorized_operations_flag() {
+        let (header, request) =
+            build_share_group_describe_request(19, "client-n", &["share-a"], true);
+
+        assert_eq!(header.request_api_key, ApiKey::ShareGroupDescribe as i16);
+        assert_eq!(header.request_api_version, API_VERSION_SHARE_GROUP_DESCRIBE);
+        assert!(request.include_authorized_operations);
+        assert_eq!(request.group_ids[0].to_string(), "share-a");
+    }
+
+    #[test]
+    fn describe_share_group_offsets_request_distinguishes_all_and_filtered_topics() {
+        let groups = [
+            ShareGroupOffsetRequest::all_partitions("share-a"),
+            ShareGroupOffsetRequest::with_topics(
+                "share-b",
+                [TopicPartitionFilter::new("topic-a", [0, 2])],
+            ),
+        ];
+        let (header, request) = build_describe_share_group_offsets_request(20, "client-o", &groups);
+
+        assert_eq!(
+            header.request_api_key,
+            ApiKey::DescribeShareGroupOffsets as i16
+        );
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS
+        );
+        assert_eq!(request.groups[0].group_id.to_string(), "share-a");
+        assert!(request.groups[0].topics.is_none());
+        assert_eq!(request.groups[1].group_id.to_string(), "share-b");
+        let topics = request.groups[1].topics.as_ref().unwrap();
+        assert_eq!(topics[0].topic_name.to_string(), "topic-a");
+        assert_eq!(topics[0].partitions, vec![0, 2]);
+    }
+
+    #[test]
     fn list_config_resources_request_accepts_resource_type_filters() {
         let (header, request) = build_list_config_resources_request(
-            19,
-            "client-n",
+            21,
+            "client-p",
             &[CONFIG_RESOURCE_TYPE_TOPIC, CONFIG_RESOURCE_TYPE_BROKER],
         );
 
@@ -2671,7 +3023,7 @@ mod tests {
         let options = DescribeTopicPartitionsOptions::new(250)
             .with_topics(["topic-a", "topic-b"])
             .with_cursor(TopicPartitionsCursor::new("topic-a", 3));
-        let (header, request) = build_describe_topic_partitions_request(20, "client-o", &options);
+        let (header, request) = build_describe_topic_partitions_request(22, "client-q", &options);
 
         assert_eq!(
             header.request_api_key,
@@ -2696,7 +3048,7 @@ mod tests {
             .with_component(ClientQuotaEntityFilter::default_entity("client-id"))
             .with_component(ClientQuotaEntityFilter::any_specified("ip"))
             .strict();
-        let (header, request) = build_describe_client_quotas_request(21, "client-p", &options);
+        let (header, request) = build_describe_client_quotas_request(23, "client-r", &options);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeClientQuotas as i16);
         assert_eq!(
@@ -2726,9 +3078,9 @@ mod tests {
     #[test]
     fn describe_user_scram_credentials_request_distinguishes_all_and_selected_users() {
         let (all_header, all_request) =
-            build_describe_user_scram_credentials_request(22, "client-q", None);
+            build_describe_user_scram_credentials_request(24, "client-s", None);
         let (selected_header, selected_request) =
-            build_describe_user_scram_credentials_request(23, "client-r", Some(&["alice", "bob"]));
+            build_describe_user_scram_credentials_request(25, "client-t", Some(&["alice", "bob"]));
 
         assert_eq!(
             all_header.request_api_key,
@@ -2739,7 +3091,7 @@ mod tests {
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         );
         assert!(all_request.users.is_none());
-        assert_eq!(selected_header.correlation_id, 23);
+        assert_eq!(selected_header.correlation_id, 25);
         let users = selected_request.users.unwrap();
         assert_eq!(users[0].name.to_string(), "alice");
         assert_eq!(users[1].name.to_string(), "bob");
@@ -2748,7 +3100,7 @@ mod tests {
     #[test]
     fn describe_producers_request_uses_topic_partition_filters() {
         let filter = [TopicPartitionFilter::new("topic-a", [0, 1])];
-        let (header, request) = build_describe_producers_request(24, "client-s", &filter);
+        let (header, request) = build_describe_producers_request(26, "client-u", &filter);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeProducers as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_PRODUCERS);
@@ -2763,7 +3115,7 @@ mod tests {
             .with_producer_id_filters([42, 43])
             .with_duration_filter_ms(30_000)
             .with_transactional_id_pattern("rustfs-.*");
-        let (header, request) = build_list_transactions_request(25, "client-t", &options);
+        let (header, request) = build_list_transactions_request(27, "client-v", &options);
 
         assert_eq!(header.request_api_key, ApiKey::ListTransactions as i16);
         assert_eq!(header.request_api_version, API_VERSION_LIST_TRANSACTIONS);
@@ -3232,6 +3584,64 @@ mod tests {
     }
 
     #[test]
+    fn convert_share_group_describe_response_preserves_assignments() {
+        let assignment = KpShareGroupAssignment::default().with_topic_partitions(vec![
+            KpShareGroupTopicPartitions::default()
+                .with_topic_name(StrBytes::from_static_str("topic-a").into())
+                .with_partitions(vec![1, 3]),
+        ]);
+        let response = ShareGroupDescribeResponse::default()
+            .with_throttle_time_ms(26)
+            .with_groups(vec![
+                KpShareGroupDescription::default()
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok")))
+                    .with_group_id(group_id("share-a"))
+                    .with_group_state(StrBytes::from_static_str("Stable"))
+                    .with_group_epoch(4)
+                    .with_assignment_epoch(5)
+                    .with_assignor_name(StrBytes::from_static_str("share"))
+                    .with_members(vec![
+                        KpShareGroupMember::default()
+                            .with_member_id(StrBytes::from_static_str("member-a"))
+                            .with_rack_id(Some(StrBytes::from_static_str("rack-a")))
+                            .with_member_epoch(6)
+                            .with_client_id(StrBytes::from_static_str("client-a"))
+                            .with_client_host(StrBytes::from_static_str("/127.0.0.1"))
+                            .with_subscribed_topic_names(vec![
+                                StrBytes::from_static_str("topic-a").into(),
+                            ])
+                            .with_assignment(assignment),
+                    ])
+                    .with_authorized_operations(777),
+            ]);
+
+        let converted = convert_share_group_describe_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 26);
+        assert_eq!(converted.groups[0].error_message, Some("ok".to_owned()));
+        assert_eq!(converted.groups[0].group_id, "share-a");
+        assert_eq!(converted.groups[0].group_state, "Stable");
+        assert_eq!(converted.groups[0].group_epoch, 4);
+        assert_eq!(converted.groups[0].assignment_epoch, 5);
+        assert_eq!(converted.groups[0].assignor_name, "share");
+        assert_eq!(converted.groups[0].authorized_operations, 777);
+        let member = &converted.groups[0].members[0];
+        assert_eq!(member.member_id, "member-a");
+        assert_eq!(member.rack_id, Some("rack-a".to_owned()));
+        assert_eq!(member.member_epoch, 6);
+        assert_eq!(member.client_id, "client-a");
+        assert_eq!(member.client_host, "/127.0.0.1");
+        assert_eq!(member.subscribed_topic_names, vec!["topic-a"]);
+        assert_eq!(member.assignment.topic_partitions[0].topic_name, "topic-a");
+        assert_eq!(member.assignment.topic_partitions[0].partitions, vec![1, 3]);
+        assert_eq!(
+            member.assignment.topic_partitions[0].topic_id,
+            "00000000-0000-0000-0000-000000000000"
+        );
+    }
+
+    #[test]
     fn convert_list_config_resources_response_preserves_resource_types() {
         let response = ListConfigResourcesResponse::default()
             .with_throttle_time_ms(18)
@@ -3314,6 +3724,45 @@ mod tests {
         assert_eq!(partition.eligible_leader_replicas, Some(vec![2]));
         assert_eq!(partition.last_known_elr, Some(vec![1]));
         assert_eq!(partition.offline_replicas, vec![3]);
+    }
+
+    #[test]
+    fn convert_describe_share_group_offsets_response_preserves_offsets() {
+        let response = DescribeShareGroupOffsetsResponse::default()
+            .with_throttle_time_ms(27)
+            .with_groups(vec![
+                KpShareGroupOffsetGroup::default()
+                    .with_group_id(group_id("share-a"))
+                    .with_topics(vec![
+                        KpShareGroupOffsetTopic::default()
+                            .with_topic_name(StrBytes::from_static_str("topic-a").into())
+                            .with_partitions(vec![
+                                KpShareGroupOffsetPartition::default()
+                                    .with_partition_index(1)
+                                    .with_start_offset(42)
+                                    .with_leader_epoch(7)
+                                    .with_error_code(0)
+                                    .with_error_message(Some(StrBytes::from_static_str("ok"))),
+                            ]),
+                    ])
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok"))),
+            ]);
+
+        let converted = convert_describe_share_group_offsets_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 27);
+        assert_eq!(converted.groups[0].group_id, "share-a");
+        assert_eq!(converted.groups[0].error_message, Some("ok".to_owned()));
+        let topic = &converted.groups[0].topics[0];
+        assert_eq!(topic.topic_name, "topic-a");
+        assert_eq!(topic.topic_id, "00000000-0000-0000-0000-000000000000");
+        let partition = &topic.partitions[0];
+        assert_eq!(partition.partition_index, 1);
+        assert_eq!(partition.start_offset, 42);
+        assert_eq!(partition.leader_epoch, 7);
+        assert_eq!(partition.error_code, 0);
+        assert_eq!(partition.error_message, Some("ok".to_owned()));
     }
 
     #[test]

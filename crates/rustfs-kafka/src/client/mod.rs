@@ -16,6 +16,7 @@
 //!   `describe_delegation_tokens()` / `describe_client_quotas()` / `describe_user_scram_credentials()` /
 //!   `describe_quorum()` / `list_config_resources()` / `describe_topic_partitions()` / `describe_producers()` /
 //!   `list_transactions()` / `fetch_api_versions()` / `list_groups()` / `describe_groups()` / `describe_consumer_groups()`
+//!   / `describe_share_groups()` / `describe_share_group_offsets()`
 //!
 //! # Examples
 //!
@@ -70,15 +71,19 @@ pub use crate::protocol::admin::{
     DescribeClientQuotasResponseData, DescribeClusterResponseData, DescribeConfigsResponseData,
     DescribeConfigsResult, DescribeDelegationTokenResponseData, DescribeGroupsResponseData,
     DescribeLogDirsResponseData, DescribeProducersResponseData, DescribeQuorumResponseData,
-    DescribeTopicPartitionsOptions, DescribeTopicPartitionsResponseData,
-    DescribeTransactionsResponseData, DescribeUserScramCredentialsResponseData, DescribedGroup,
-    DescribedGroupMember, DescribedTopicPartition, DescribedTopicPartitionsTopic,
-    DescribedTransaction, KafkaPrincipal, ListConfigResourcesResponseData, ListGroupsResponseData,
+    DescribeShareGroupOffsetsResponseData, DescribeTopicPartitionsOptions,
+    DescribeTopicPartitionsResponseData, DescribeTransactionsResponseData,
+    DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
+    DescribedTopicPartition, DescribedTopicPartitionsTopic, DescribedTransaction, KafkaPrincipal,
+    ListConfigResourcesResponseData, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
     ListedConfigResource, ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition,
     LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, QuorumListener,
     QuorumNode, QuorumPartition, QuorumReplicaState, QuorumTopic, SCRAM_MECHANISM_SHA_256,
-    SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, TopicPartitionFilter, TopicPartitionsCursor,
+    SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, ShareGroupAssignment,
+    ShareGroupDescribeResponseData, ShareGroupDescription, ShareGroupMemberDescription,
+    ShareGroupOffsetGroup, ShareGroupOffsetPartition, ShareGroupOffsetRequest,
+    ShareGroupOffsetTopic, ShareGroupTopicPartitions, TopicPartitionFilter, TopicPartitionsCursor,
     TopicReassignment, TransactionTopic, UserScramCredentialsDescription,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
@@ -1783,6 +1788,146 @@ impl KafkaClient {
                     );
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "ConsumerGroupDescribe")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes Kafka share group state for the supplied group IDs.
+    ///
+    /// This uses Kafka's `ShareGroupDescribe` API and returns structured member
+    /// subscription and assignment data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_share_groups(
+        &mut self,
+        groups: &[&str],
+    ) -> Result<ShareGroupDescribeResponseData> {
+        self.describe_share_groups_with_options(groups, false)
+    }
+
+    /// Describes Kafka share group state with optional authorized-operation fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_share_groups_with_options(
+        &mut self,
+        groups: &[&str],
+        include_authorized_operations: bool,
+    ) -> Result<ShareGroupDescribeResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ShareGroupDescribe"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_share_group_describe_request(
+                correlation_id,
+                &self.config.client_id,
+                groups,
+                include_authorized_operations,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::ShareGroupDescribeResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_share_group_describe_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ShareGroupDescribe")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes all visible share-partition offsets for the supplied share group IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_share_group_offsets(
+        &mut self,
+        groups: &[&str],
+    ) -> Result<DescribeShareGroupOffsetsResponseData> {
+        let requests: Vec<_> = groups
+            .iter()
+            .map(|group| ShareGroupOffsetRequest::all_partitions(*group))
+            .collect();
+        self.describe_share_group_offsets_with_options(&requests)
+    }
+
+    /// Describes share-partition offsets using per-group topic partition filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_share_group_offsets_with_options(
+        &mut self,
+        groups: &[ShareGroupOffsetRequest],
+    ) -> Result<DescribeShareGroupOffsetsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeShareGroupOffsets"));
+                    continue;
+                }
+            };
+
+            let (header, request) =
+                crate::protocol::admin::build_describe_share_group_offsets_request(
+                    correlation_id,
+                    &self.config.client_id,
+                    groups,
+                );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DescribeShareGroupOffsetsResponse,
+                >(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_describe_share_group_offsets_response(resp),
+                    );
+                }
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeShareGroupOffsets"));
+                }
             }
         }
 

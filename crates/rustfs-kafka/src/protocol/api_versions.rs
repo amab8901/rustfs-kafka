@@ -12,11 +12,12 @@ use crate::protocol::{
     API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
-    API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
-    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
-    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
-    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA,
-    API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
+    API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_CONFIG_RESOURCES,
+    API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+    API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
+    API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE, API_VERSION_SHARE_GROUP_DESCRIBE,
 };
 use tracing::{debug, info};
 
@@ -50,6 +51,8 @@ pub mod api_key {
     pub const CONSUMER_GROUP_DESCRIBE: i16 = 69;
     pub const LIST_CONFIG_RESOURCES: i16 = 74;
     pub const DESCRIBE_TOPIC_PARTITIONS: i16 = 75;
+    pub const SHARE_GROUP_DESCRIBE: i16 = 77;
+    pub const DESCRIBE_SHARE_GROUP_OFFSETS: i16 = 90;
 }
 
 /// One Kafka API version range advertised by a broker.
@@ -331,6 +334,8 @@ impl ApiVersionCache {
             api_key::CONSUMER_GROUP_DESCRIBE => API_VERSION_CONSUMER_GROUP_DESCRIBE,
             api_key::LIST_CONFIG_RESOURCES => API_VERSION_LIST_CONFIG_RESOURCES,
             api_key::DESCRIBE_TOPIC_PARTITIONS => API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+            api_key::SHARE_GROUP_DESCRIBE => API_VERSION_SHARE_GROUP_DESCRIBE,
+            api_key::DESCRIBE_SHARE_GROUP_OFFSETS => API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
             _ => 0,
         }
     }
@@ -402,6 +407,11 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             DESCRIBE_TOPIC_PARTITIONS,
             API_VERSION_DESCRIBE_TOPIC_PARTITIONS
         ),
+        share_group_describe: version!(SHARE_GROUP_DESCRIBE, API_VERSION_SHARE_GROUP_DESCRIBE),
+        describe_share_group_offsets: version!(
+            DESCRIBE_SHARE_GROUP_OFFSETS,
+            API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS
+        ),
     }
 }
 
@@ -433,6 +443,8 @@ pub struct ApiVersions {
     pub consumer_group_describe: i16,
     pub list_config_resources: i16,
     pub describe_topic_partitions: i16,
+    pub share_group_describe: i16,
+    pub describe_share_group_offsets: i16,
 }
 
 impl Default for ApiVersions {
@@ -462,6 +474,8 @@ impl Default for ApiVersions {
             consumer_group_describe: API_VERSION_CONSUMER_GROUP_DESCRIBE,
             list_config_resources: API_VERSION_LIST_CONFIG_RESOURCES,
             describe_topic_partitions: API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+            share_group_describe: API_VERSION_SHARE_GROUP_DESCRIBE,
+            describe_share_group_offsets: API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
         }
     }
 }
@@ -630,6 +644,11 @@ mod tests {
             v.describe_topic_partitions,
             API_VERSION_DESCRIBE_TOPIC_PARTITIONS
         );
+        assert_eq!(v.share_group_describe, API_VERSION_SHARE_GROUP_DESCRIBE);
+        assert_eq!(
+            v.describe_share_group_offsets,
+            API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS
+        );
     }
 
     #[test]
@@ -667,106 +686,75 @@ mod tests {
         assert_eq!(v.consumer_group_describe, d.consumer_group_describe);
         assert_eq!(v.list_config_resources, d.list_config_resources);
         assert_eq!(v.describe_topic_partitions, d.describe_topic_partitions);
+        assert_eq!(v.share_group_describe, d.share_group_describe);
+        assert_eq!(
+            v.describe_share_group_offsets,
+            d.describe_share_group_offsets
+        );
     }
 
     #[test]
     fn fallback_version_known_apis() {
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::PRODUCE),
-            API_VERSION_PRODUCE
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::FETCH),
-            API_VERSION_FETCH
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::METADATA),
-            API_VERSION_METADATA
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::LIST_OFFSETS),
-            API_VERSION_LIST_OFFSETS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::FIND_COORDINATOR),
-            API_VERSION_FIND_COORDINATOR
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::OFFSET_COMMIT),
-            API_VERSION_OFFSET_COMMIT
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::OFFSET_FETCH),
-            API_VERSION_OFFSET_FETCH
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_GROUPS),
-            API_VERSION_DESCRIBE_GROUPS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::LIST_GROUPS),
-            API_VERSION_LIST_GROUPS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_ACLS),
-            API_VERSION_DESCRIBE_ACLS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_CONFIGS),
-            API_VERSION_DESCRIBE_CONFIGS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_LOG_DIRS),
-            API_VERSION_DESCRIBE_LOG_DIRS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_DELEGATION_TOKEN),
-            API_VERSION_DESCRIBE_DELEGATION_TOKEN
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::LIST_PARTITION_REASSIGNMENTS),
-            API_VERSION_LIST_PARTITION_REASSIGNMENTS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_CLIENT_QUOTAS),
-            API_VERSION_DESCRIBE_CLIENT_QUOTAS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_USER_SCRAM_CREDENTIALS),
-            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_QUORUM),
-            API_VERSION_DESCRIBE_QUORUM
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_CLUSTER),
-            API_VERSION_DESCRIBE_CLUSTER
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_PRODUCERS),
-            API_VERSION_DESCRIBE_PRODUCERS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_TRANSACTIONS),
-            API_VERSION_DESCRIBE_TRANSACTIONS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::LIST_TRANSACTIONS),
-            API_VERSION_LIST_TRANSACTIONS
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::CONSUMER_GROUP_DESCRIBE),
-            API_VERSION_CONSUMER_GROUP_DESCRIBE
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::LIST_CONFIG_RESOURCES),
-            API_VERSION_LIST_CONFIG_RESOURCES
-        );
-        assert_eq!(
-            ApiVersionCache::fallback_version(api_key::DESCRIBE_TOPIC_PARTITIONS),
-            API_VERSION_DESCRIBE_TOPIC_PARTITIONS
-        );
+        for (api_key, expected_version) in [
+            (api_key::PRODUCE, API_VERSION_PRODUCE),
+            (api_key::FETCH, API_VERSION_FETCH),
+            (api_key::METADATA, API_VERSION_METADATA),
+            (api_key::LIST_OFFSETS, API_VERSION_LIST_OFFSETS),
+            (api_key::FIND_COORDINATOR, API_VERSION_FIND_COORDINATOR),
+            (api_key::OFFSET_COMMIT, API_VERSION_OFFSET_COMMIT),
+            (api_key::OFFSET_FETCH, API_VERSION_OFFSET_FETCH),
+            (api_key::DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS),
+            (api_key::LIST_GROUPS, API_VERSION_LIST_GROUPS),
+            (api_key::DESCRIBE_ACLS, API_VERSION_DESCRIBE_ACLS),
+            (api_key::DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
+            (api_key::DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
+            (
+                api_key::DESCRIBE_DELEGATION_TOKEN,
+                API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+            ),
+            (
+                api_key::LIST_PARTITION_REASSIGNMENTS,
+                API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            ),
+            (
+                api_key::DESCRIBE_CLIENT_QUOTAS,
+                API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            ),
+            (
+                api_key::DESCRIBE_USER_SCRAM_CREDENTIALS,
+                API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+            ),
+            (api_key::DESCRIBE_QUORUM, API_VERSION_DESCRIBE_QUORUM),
+            (api_key::DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CLUSTER),
+            (api_key::DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_PRODUCERS),
+            (
+                api_key::DESCRIBE_TRANSACTIONS,
+                API_VERSION_DESCRIBE_TRANSACTIONS,
+            ),
+            (api_key::LIST_TRANSACTIONS, API_VERSION_LIST_TRANSACTIONS),
+            (
+                api_key::CONSUMER_GROUP_DESCRIBE,
+                API_VERSION_CONSUMER_GROUP_DESCRIBE,
+            ),
+            (
+                api_key::LIST_CONFIG_RESOURCES,
+                API_VERSION_LIST_CONFIG_RESOURCES,
+            ),
+            (
+                api_key::DESCRIBE_TOPIC_PARTITIONS,
+                API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+            ),
+            (
+                api_key::SHARE_GROUP_DESCRIBE,
+                API_VERSION_SHARE_GROUP_DESCRIBE,
+            ),
+            (
+                api_key::DESCRIBE_SHARE_GROUP_OFFSETS,
+                API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+            ),
+        ] {
+            assert_eq!(ApiVersionCache::fallback_version(api_key), expected_version);
+        }
     }
 
     #[test]

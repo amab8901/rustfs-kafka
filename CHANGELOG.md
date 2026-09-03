@@ -26,12 +26,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `describe_transactions`
   - `describe_topic_partitions` / `describe_topic_partitions_with_options`
   - `describe_consumer_groups` / `describe_consumer_groups_with_options`
+  - `describe_share_groups` / `describe_share_groups_with_options`
+  - `describe_share_group_offsets` / `describe_share_group_offsets_with_options`
   - `list_groups` / `list_groups_with_filters`
   - `describe_groups` / `describe_groups_with_options`
 - Added public response data types for broker API versions, cluster brokers, config resources/entries, config resource
   discovery, listed groups, described groups, described group members, ACL resources, delegation tokens, log directory
   diagnostics, KRaft quorum state, topic partition discovery, partition reassignments, client quotas, SCRAM credential
-  metadata, active producers, transactions, and modern consumer group descriptions.
+  metadata, active producers, transactions, modern consumer group descriptions, share group descriptions, and share group
+  offsets.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 
 ### Changed
