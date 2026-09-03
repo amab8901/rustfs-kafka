@@ -146,14 +146,17 @@ Enable TLS with default feature `security` (rustls + aws-lc-rs):
 
 ```toml
 [dependencies]
-rustfs-kafka = "0.22"
+rustfs-kafka = "1.2.0"
 ```
+
+By default, TLS verification uses `webpki-roots`. Use `SecurityConfig::with_ca_cert` when Kafka brokers are signed by a
+private or enterprise CA.
 
 `security-ring` switches rustls crypto provider to `ring`:
 
 ```toml
 [dependencies]
-rustfs-kafka = { version = "0.22", default-features = false, features = ["security-ring"] }
+rustfs-kafka = { version = "1.2.0", default-features = false, features = ["security-ring"] }
 ```
 
 ## 6. Metrics
@@ -162,7 +165,7 @@ Enable metrics feature:
 
 ```toml
 [dependencies]
-rustfs-kafka = { version = "0.22", features = ["metrics"] }
+rustfs-kafka = { version = "1.2.0", features = ["metrics"] }
 ```
 
 Metrics include produce/fetch/metadata refresh and connection-level counters/gauges.

@@ -42,6 +42,6 @@ pub use consumer::{AsyncConsumer, AsyncConsumerBuilder};
 pub use producer::{AsyncProducer, AsyncProducerBuilder, AsyncProducerConfig};
 
 // Re-export core types from the sync crate for convenience
-pub use rustfs_kafka::client::{RequiredAcks, SaslConfig, SecurityConfig};
+pub use rustfs_kafka::client::{RequiredAcks, SaslConfig, SecurityConfig, TlsConfig};
 pub use rustfs_kafka::error;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};

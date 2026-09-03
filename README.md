@@ -28,8 +28,10 @@ rustfs-kafka-async = "1.2.0"
 - Kafka client metadata, fetch, produce, and offset commit APIs.
 - High-level `Consumer` and `Producer` abstractions.
 - TLS support via rustls:
-    - `security` (default, aws-lc-rs provider)
-    - `security-ring` (ring provider)
+    - `security` (default, aws-lc-rs provider, `webpki-roots` trust store)
+    - `security-ring` (ring provider, `webpki-roots` trust store)
+- Custom/private CAs are supported through `SecurityConfig::with_ca_cert`; system native root stores are not loaded by
+  default.
 - Async security authentication support includes SASL `PLAIN`, `SCRAM-SHA-256`, and `SCRAM-SHA-512` over TLS.
 - Optional `metrics` support.
 - Optional `producer_timestamp`.

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Upgraded `kafka-protocol` from `0.17.0` to `0.18.0` and updated Produce record construction for the new
+  `delete_horizon` record field.
+- Default TLS root loading now uses the bundled `webpki-roots` set plus explicit `ca_cert_path` configuration only.
+  `rustls-native-certs` and its platform-specific transitive crates are no longer dependencies.
+- `rustfs-kafka-async` now re-exports `TlsConfig` alongside `SecurityConfig` for easier async TLS configuration.
 - Bumped workspace dependencies:
   - `rustls`: `0.23.39` -> `0.23.40`
   - `metrics`: `0.24.3` -> `0.24.6`
@@ -21,6 +26,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Updated integration test ctor annotation to match `ctor` `1.x` requirements:
   - `#[ctor::ctor]` -> `#[ctor::ctor(unsafe)]` in `crates/rustfs-kafka/tests/test_kafka.rs`
+
+### Deprecated
+
+- Deprecated async builder compatibility toggles that are ignored by the native async implementation:
+  - `AsyncProducerBuilder::with_channel_capacity`
+  - `AsyncProducerBuilder::with_native_async`
+  - `AsyncConsumerBuilder::with_channel_capacity`
+  - `AsyncConsumerBuilder::with_native_async`
 
 ## [1.2.0] - 2026-04-23
 

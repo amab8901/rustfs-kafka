@@ -53,6 +53,7 @@ pub fn build_produce_request(
         let record = Record {
             transactional: false,
             control: false,
+            delete_horizon: false,
             partition_leader_epoch: -1,
             producer_id: -1,
             producer_epoch: -1,

@@ -14,7 +14,6 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, StreamOwned};
-use tracing::debug;
 
 /// rustls-based TLS stream
 pub struct RustlsStream {
@@ -214,18 +213,6 @@ impl RustlsConnector {
         } else {
             // Use webpki-roots for default trusted CAs
             root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-            // Also try to load system certificates
-            let native_certs = rustls_native_certs::load_native_certs();
-            for cert in native_certs.certs {
-                let _ = root_store.add(cert);
-            }
-            if let Some(e) = native_certs.errors.first() {
-                debug!(
-                    "Failed to load some native certs (using webpki-roots as fallback): {}",
-                    e
-                );
-            }
         }
         Ok(root_store)
     }

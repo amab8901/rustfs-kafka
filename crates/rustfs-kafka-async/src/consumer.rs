@@ -180,6 +180,10 @@ impl AsyncConsumerBuilder {
     }
 
     /// Backward-compatible no-op kept for API compatibility.
+    #[deprecated(
+        since = "1.2.0",
+        note = "native async consumers no longer use an internal channel; this setting is ignored"
+    )]
     #[must_use]
     pub fn with_channel_capacity(mut self, channel_capacity: usize) -> Self {
         self.channel_capacity = channel_capacity.max(1);
@@ -187,6 +191,10 @@ impl AsyncConsumerBuilder {
     }
 
     /// Backward-compatible setting kept for API compatibility.
+    #[deprecated(
+        since = "1.2.0",
+        note = "native async consumers are always enabled; this setting is ignored"
+    )]
     #[must_use]
     pub fn with_native_async(mut self, native_async: bool) -> Self {
         self.native_async = native_async;

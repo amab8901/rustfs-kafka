@@ -685,16 +685,6 @@ async fn load_root_store(tls_config: &TlsConfig) -> Result<RootCertStore> {
         }
     } else {
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let native_certs = rustls_native_certs::load_native_certs();
-        for cert in native_certs.certs {
-            let _ = root_store.add(cert);
-        }
-        if let Some(e) = native_certs.errors.first() {
-            debug!(
-                "Failed to load some native certs (using webpki-roots as fallback): {}",
-                e
-            );
-        }
     }
 
     Ok(root_store)

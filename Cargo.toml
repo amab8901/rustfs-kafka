@@ -16,7 +16,7 @@ license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/houseme/kafka-rust"
 description = "Rust client for Apache Kafka"
-rust-version = "1.93.0"
+rust-version = "1.98.0"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -30,37 +30,36 @@ redundant_clone = "warn"
 rustfs-kafka = { path = "crates/rustfs-kafka", version = "1.2.0" }
 rustfs-kafka-async = { path = "crates/rustfs-kafka-async", version = "1.2.0" }
 # Core dependencies
-socket2 = "0.6.3"
+socket2 = "0.6.5"
 fnv = "1.0.7"
-twox-hash = { version = "2.1.2", default-features = false, features = ["xxhash32", "std"] }
-bytes = "1.11.1"
-kafka-protocol = { version = "0.17.0", default-features = false, features = ["client"] }
-indexmap = "2.14.0"
-thiserror = "2.0.18"
+twox-hash = { version = "2.1.4", default-features = false, features = ["xxhash32", "std"] }
+bytes = "1.12.1"
+kafka-protocol = { version = "0.18.0", default-features = false, features = ["client"] }
+indexmap = "2.14.1"
+thiserror = "2.0.20"
 tracing = "0.1.44"
 
 # Optional dependencies (made optional in consuming crates via dep: syntax)
-rustls = { version = "0.23.40", default-features = false, features = ["logging", "std", "tls12"] }
-webpki-roots = "1.0.7"
-rustls-native-certs = "0.8.3"
+rustls = { version = "0.23.43", default-features = false, features = ["logging", "std", "tls12"] }
+webpki-roots = "1.0.9"
 
 # Optional: metrics
 metrics = "0.24.6"
-base64 = "0.22.1"
+base64 = "0.23.1"
 hmac = "0.13.0"
 sha2 = "0.11.0"
 pbkdf2 = "0.13.0"
 
 # Async runtime
-tokio = "1.52.3"
+tokio = "1.53.1"
 tokio-rustls = "0.26.4"
 
 # Dev dependencies
-ctor = "1.0.6"
+ctor = "1.0.13"
 getopts = "0.2.24"
 tracing-subscriber = "0.3"
-rand = "0.10.1"
-anyhow = "1.0.102"
+rand = "0.10.2"
+anyhow = "1.0.104"
 proptest = "1.11.0"
 criterion = { version = "0.8.2", features = ["html_reports"] }
 temp-env = "0.3.6"
