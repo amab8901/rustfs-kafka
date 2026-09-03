@@ -11,8 +11,9 @@
 //! - **Metadata queries** via `load_metadata_all()` / `load_metadata()`
 //! - **Offset management** via `fetch_offsets()` / `commit_offsets()`
 //! - **Topic management** via `create_topics()` / `delete_topics()`
-//! - **Cluster, config, broker storage, producer, transaction, API version, and group inspection** via
+//! - **Cluster, config, quota, SCRAM credential, broker storage, producer, transaction, API version, and group inspection** via
 //!   `describe_cluster()` / `describe_configs()` / `describe_log_dirs()` /
+//!   `describe_client_quotas()` / `describe_user_scram_credentials()` /
 //!   `describe_producers()` / `list_transactions()` / `fetch_api_versions()` /
 //!   `list_groups()` / `describe_groups()`
 //!
@@ -50,14 +51,18 @@
 // pub re-exports
 pub use crate::compression::Compression;
 pub use crate::protocol::admin::{
-    ActiveProducer, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
-    DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
-    DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
-    DescribeTransactionsResponseData, DescribedGroup, DescribedGroupMember, DescribedTransaction,
-    ListGroupsResponseData, ListPartitionReassignmentsResponseData, ListTransactionsOptions,
-    ListTransactionsResponseData, ListedGroup, ListedTransaction, LogDirDescription,
-    LogDirPartition, LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic,
-    TopicPartitionFilter, TopicReassignment, TransactionTopic,
+    ActiveProducer, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
+    CLIENT_QUOTA_MATCH_EXACT, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
+    ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
+    DescribeClientQuotasOptions, DescribeClientQuotasResponseData, DescribeClusterResponseData,
+    DescribeConfigsResponseData, DescribeConfigsResult, DescribeGroupsResponseData,
+    DescribeLogDirsResponseData, DescribeProducersResponseData, DescribeTransactionsResponseData,
+    DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
+    DescribedTransaction, ListGroupsResponseData, ListPartitionReassignmentsResponseData,
+    ListTransactionsOptions, ListTransactionsResponseData, ListedGroup, ListedTransaction,
+    LogDirDescription, LogDirPartition, LogDirTopic, PartitionReassignment, ProducerPartition,
+    ProducerTopic, SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, ScramCredentialInfo,
+    TopicPartitionFilter, TopicReassignment, TransactionTopic, UserScramCredentialsDescription,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
@@ -1073,6 +1078,146 @@ impl KafkaClient {
                 }
                 Err(e) => {
                     last_err = Some(e.with_broker_context(&host, "ListPartitionReassignments"));
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes all client quota entities visible to the contacted broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_client_quotas(&mut self) -> Result<DescribeClientQuotasResponseData> {
+        self.describe_client_quotas_with_options(&DescribeClientQuotasOptions::default())
+    }
+
+    /// Describes client quota entities using Kafka entity filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_client_quotas_with_options(
+        &mut self,
+        options: &DescribeClientQuotasOptions,
+    ) -> Result<DescribeClientQuotasResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeClientQuotas"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_client_quotas_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DescribeClientQuotasResponse,
+                >(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_client_quotas_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeClientQuotas")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes SCRAM credential metadata for all visible users.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_user_scram_credentials(
+        &mut self,
+    ) -> Result<DescribeUserScramCredentialsResponseData> {
+        self.describe_user_scram_credentials_with_filter(None)
+    }
+
+    /// Describes SCRAM credential metadata for selected users.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_user_scram_credentials_for(
+        &mut self,
+        users: &[&str],
+    ) -> Result<DescribeUserScramCredentialsResponseData> {
+        self.describe_user_scram_credentials_with_filter(Some(users))
+    }
+
+    fn describe_user_scram_credentials_with_filter(
+        &mut self,
+        users: Option<&[&str]>,
+    ) -> Result<DescribeUserScramCredentialsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeUserScramCredentials"));
+                    continue;
+                }
+            };
+
+            let (header, request) =
+                crate::protocol::admin::build_describe_user_scram_credentials_request(
+                    correlation_id,
+                    &self.config.client_id,
+                    users,
+                );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DescribeUserScramCredentialsResponse,
+                >(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_describe_user_scram_credentials_response(
+                            resp,
+                        ),
+                    );
+                }
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeUserScramCredentials"));
                 }
             }
         }

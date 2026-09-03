@@ -130,7 +130,10 @@ tx.commit().unwrap();
 
 ```rust,no_run
 use std::time::Duration;
-use rustfs_kafka::client::{ConfigResource, KafkaClient, ListTransactionsOptions, TopicPartitionFilter};
+use rustfs_kafka::client::{
+    ClientQuotaEntityFilter, ConfigResource, DescribeClientQuotasOptions, KafkaClient,
+    ListTransactionsOptions, TopicPartitionFilter,
+};
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
 
@@ -190,6 +193,20 @@ for topic in reassignments.topics {
     println!("topic={} reassignments={}", topic.name, topic.partitions.len());
 }
 
+let quota_filter = DescribeClientQuotasOptions::new()
+    .with_component(ClientQuotaEntityFilter::exact("user", "alice"));
+let quotas = client.describe_client_quotas_with_options(&quota_filter).unwrap();
+for entry in quotas.entries.unwrap_or_default() {
+    println!("quota_entity_parts={} values={}", entry.entity.len(), entry.values.len());
+}
+
+let scram_credentials = client
+    .describe_user_scram_credentials_for(&["alice"])
+    .unwrap();
+for user in scram_credentials.results {
+    println!("user={} credentials={}", user.user, user.credential_infos.len());
+}
+
 let producers = client.describe_producers(&partitions).unwrap();
 for topic in producers.topics {
     println!("topic={} producer_partitions={}", topic.name, topic.partitions.len());
@@ -228,6 +245,8 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
 - `describe_log_dirs_for(topic_partition_filters)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
+- `describe_client_quotas_with_options(options)`
+- `describe_user_scram_credentials_for(users)`
 - `list_transactions_with_options(options)`
 
 ### 4.3 Topic create/delete

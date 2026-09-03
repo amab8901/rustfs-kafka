@@ -8,10 +8,11 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_GROUPS,
-    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
-    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
-    API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_GROUPS,
+    API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
     API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
     API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
 };
@@ -35,6 +36,8 @@ pub mod api_key {
     pub const DESCRIBE_CONFIGS: i16 = 32;
     pub const DESCRIBE_LOG_DIRS: i16 = 35;
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
+    pub const DESCRIBE_CLIENT_QUOTAS: i16 = 48;
+    pub const DESCRIBE_USER_SCRAM_CREDENTIALS: i16 = 50;
     pub const DESCRIBE_CLUSTER: i16 = 60;
     pub const DESCRIBE_PRODUCERS: i16 = 61;
     pub const DESCRIBE_TRANSACTIONS: i16 = 65;
@@ -308,6 +311,8 @@ impl ApiVersionCache {
             api_key::DESCRIBE_CONFIGS => API_VERSION_DESCRIBE_CONFIGS,
             api_key::DESCRIBE_LOG_DIRS => API_VERSION_DESCRIBE_LOG_DIRS,
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            api_key::DESCRIBE_CLIENT_QUOTAS => API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            api_key::DESCRIBE_USER_SCRAM_CREDENTIALS => API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
             api_key::DESCRIBE_PRODUCERS => API_VERSION_DESCRIBE_PRODUCERS,
             api_key::DESCRIBE_TRANSACTIONS => API_VERSION_DESCRIBE_TRANSACTIONS,
@@ -392,6 +397,18 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             api_key::LIST_PARTITION_REASSIGNMENTS,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS,
         ),
+        describe_client_quotas: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_CLIENT_QUOTAS,
+            API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+        ),
+        describe_user_scram_credentials: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_USER_SCRAM_CREDENTIALS,
+            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+        ),
         describe_cluster: resolve_api_version(
             cache,
             host,
@@ -435,6 +452,8 @@ pub struct ApiVersions {
     pub describe_configs: i16,
     pub describe_log_dirs: i16,
     pub list_partition_reassignments: i16,
+    pub describe_client_quotas: i16,
+    pub describe_user_scram_credentials: i16,
     pub describe_cluster: i16,
     pub describe_producers: i16,
     pub describe_transactions: i16,
@@ -456,6 +475,8 @@ impl Default for ApiVersions {
             describe_configs: API_VERSION_DESCRIBE_CONFIGS,
             describe_log_dirs: API_VERSION_DESCRIBE_LOG_DIRS,
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            describe_client_quotas: API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            describe_user_scram_credentials: API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
             describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
             describe_producers: API_VERSION_DESCRIBE_PRODUCERS,
             describe_transactions: API_VERSION_DESCRIBE_TRANSACTIONS,
@@ -604,6 +625,11 @@ mod tests {
             v.list_partition_reassignments,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
         );
+        assert_eq!(v.describe_client_quotas, API_VERSION_DESCRIBE_CLIENT_QUOTAS);
+        assert_eq!(
+            v.describe_user_scram_credentials,
+            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
+        );
         assert_eq!(v.describe_cluster, API_VERSION_DESCRIBE_CLUSTER);
         assert_eq!(v.describe_producers, API_VERSION_DESCRIBE_PRODUCERS);
         assert_eq!(v.describe_transactions, API_VERSION_DESCRIBE_TRANSACTIONS);
@@ -629,6 +655,11 @@ mod tests {
         assert_eq!(
             v.list_partition_reassignments,
             d.list_partition_reassignments
+        );
+        assert_eq!(v.describe_client_quotas, d.describe_client_quotas);
+        assert_eq!(
+            v.describe_user_scram_credentials,
+            d.describe_user_scram_credentials
         );
         assert_eq!(v.describe_cluster, d.describe_cluster);
         assert_eq!(v.describe_producers, d.describe_producers);
@@ -685,6 +716,14 @@ mod tests {
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::LIST_PARTITION_REASSIGNMENTS),
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_CLIENT_QUOTAS),
+            API_VERSION_DESCRIBE_CLIENT_QUOTAS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_USER_SCRAM_CREDENTIALS),
+            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         );
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::DESCRIBE_CLUSTER),

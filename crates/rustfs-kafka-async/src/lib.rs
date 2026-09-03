@@ -43,15 +43,19 @@ pub use producer::{AsyncProducer, AsyncProducerBuilder, AsyncProducerConfig};
 
 // Re-export core types from the sync crate for convenience
 pub use rustfs_kafka::client::{
-    ActiveProducer, ApiVersionsResponseData, BrokerApiVersion, ClusterBroker, ConfigEntry,
-    ConfigResource, ConfigSynonym, DescribeClusterResponseData, DescribeConfigsResponseData,
-    DescribeConfigsResult, DescribeGroupsResponseData, DescribeLogDirsResponseData,
-    DescribeProducersResponseData, DescribeTransactionsResponseData, DescribedGroup,
+    ActiveProducer, ApiVersionsResponseData, BrokerApiVersion, CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
+    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, ClientQuotaEntity,
+    ClientQuotaEntityFilter, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
+    ConfigResource, ConfigSynonym, DescribeClientQuotasOptions, DescribeClientQuotasResponseData,
+    DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
+    DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
+    DescribeTransactionsResponseData, DescribeUserScramCredentialsResponseData, DescribedGroup,
     DescribedGroupMember, DescribedTransaction, ListGroupsResponseData,
     ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
     ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition, LogDirTopic,
-    PartitionReassignment, ProducerPartition, ProducerTopic, RequiredAcks, SaslConfig,
-    SecurityConfig, TlsConfig, TopicPartitionFilter, TopicReassignment, TransactionTopic,
+    PartitionReassignment, ProducerPartition, ProducerTopic, RequiredAcks, SCRAM_MECHANISM_SHA_256,
+    SCRAM_MECHANISM_SHA_512, SaslConfig, ScramCredentialInfo, SecurityConfig, TlsConfig,
+    TopicPartitionFilter, TopicReassignment, TransactionTopic, UserScramCredentialsDescription,
 };
 pub use rustfs_kafka::error;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};

@@ -25,8 +25,8 @@ rustfs-kafka-async = "1.2.0"
 
 ## Core Features
 
-- Kafka client metadata, fetch, produce, offset commit, API version, cluster/config, broker log directory, partition
-  reassignment, active producer, transaction, and consumer group inspection APIs.
+- Kafka client metadata, fetch, produce, offset commit, API version, cluster/config, client quota, SCRAM credential,
+  broker log directory, partition reassignment, active producer, transaction, and consumer group inspection APIs.
 - High-level `Consumer` and `Producer` abstractions.
 - TLS support via rustls:
     - `security` (default, aws-lc-rs provider, `webpki-roots` trust store)

@@ -2,20 +2,23 @@
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    ApiKey, DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
-    DescribeConfigsResponse, DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest,
-    DescribeLogDirsResponse, DescribeProducersRequest, DescribeProducersResponse,
-    DescribeTransactionsRequest, DescribeTransactionsResponse, GroupId, ListGroupsRequest,
-    ListGroupsResponse, ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse,
-    ListTransactionsRequest, ListTransactionsResponse, RequestHeader,
+    ApiKey, DescribeClientQuotasRequest, DescribeClientQuotasResponse, DescribeClusterRequest,
+    DescribeClusterResponse, DescribeConfigsRequest, DescribeConfigsResponse,
+    DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
+    DescribeProducersRequest, DescribeProducersResponse, DescribeTransactionsRequest,
+    DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
+    DescribeUserScramCredentialsResponse, GroupId, ListGroupsRequest, ListGroupsResponse,
+    ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
+    ListTransactionsResponse, RequestHeader,
 };
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
-    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_GROUPS,
-    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
-    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_LIST_GROUPS,
-    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
+    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    API_VERSION_LIST_GROUPS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+    API_VERSION_LIST_TRANSACTIONS,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -27,6 +30,18 @@ pub const CONFIG_RESOURCE_TYPE_TOPIC: i8 = 2;
 pub const CONFIG_RESOURCE_TYPE_BROKER: i8 = 4;
 /// Broker logger config resource type for `DescribeConfigs`.
 pub const CONFIG_RESOURCE_TYPE_BROKER_LOGGER: i8 = 8;
+
+/// Match an exact client quota entity name.
+pub const CLIENT_QUOTA_MATCH_EXACT: i8 = 0;
+/// Match the default client quota entity.
+pub const CLIENT_QUOTA_MATCH_DEFAULT: i8 = 1;
+/// Match any specified client quota entity name.
+pub const CLIENT_QUOTA_MATCH_ANY_SPECIFIED: i8 = 2;
+
+/// Kafka SCRAM-SHA-256 mechanism code.
+pub const SCRAM_MECHANISM_SHA_256: i8 = 1;
+/// Kafka SCRAM-SHA-512 mechanism code.
+pub const SCRAM_MECHANISM_SHA_512: i8 = 2;
 
 /// A resource whose configs should be described.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +115,90 @@ impl TopicPartitionFilter {
             topic: topic.into(),
             partitions: partitions.into_iter().collect(),
         }
+    }
+}
+
+/// One entity component used to filter `DescribeClientQuotas`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientQuotaEntityFilter {
+    /// Kafka quota entity type, for example `user`, `client-id`, or `ip`.
+    pub entity_type: String,
+    /// Raw Kafka match type.
+    pub match_type: i8,
+    /// Name to match when `match_type` is exact.
+    pub match_value: Option<String>,
+}
+
+impl ClientQuotaEntityFilter {
+    /// Match an exact quota entity name.
+    #[must_use]
+    pub fn exact(entity_type: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            entity_type: entity_type.into(),
+            match_type: CLIENT_QUOTA_MATCH_EXACT,
+            match_value: Some(value.into()),
+        }
+    }
+
+    /// Match the default quota entity.
+    #[must_use]
+    pub fn default_entity(entity_type: impl Into<String>) -> Self {
+        Self {
+            entity_type: entity_type.into(),
+            match_type: CLIENT_QUOTA_MATCH_DEFAULT,
+            match_value: None,
+        }
+    }
+
+    /// Match any specified quota entity name.
+    #[must_use]
+    pub fn any_specified(entity_type: impl Into<String>) -> Self {
+        Self {
+            entity_type: entity_type.into(),
+            match_type: CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
+            match_value: None,
+        }
+    }
+}
+
+/// Filters for a `DescribeClientQuotas` request.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DescribeClientQuotasOptions {
+    /// Entity filter components. Empty means all quota entities visible to the broker.
+    pub components: Vec<ClientQuotaEntityFilter>,
+    /// Whether Kafka should exclude entities with unspecified entity types.
+    pub strict: bool,
+}
+
+impl DescribeClientQuotasOptions {
+    /// Create options that describe all visible client quota entities.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Require strict entity matching.
+    #[must_use]
+    pub fn strict(mut self) -> Self {
+        self.strict = true;
+        self
+    }
+
+    /// Add one entity filter component.
+    #[must_use]
+    pub fn with_component(mut self, component: ClientQuotaEntityFilter) -> Self {
+        self.components.push(component);
+        self
+    }
+
+    /// Replace the entity filter components.
+    #[must_use]
+    pub fn with_components<I>(mut self, components: I) -> Self
+    where
+        I: IntoIterator<Item = ClientQuotaEntityFilter>,
+    {
+        self.components = components.into_iter().collect();
+        self
     }
 }
 
@@ -405,6 +504,81 @@ pub struct ListPartitionReassignmentsResponseData {
     pub topics: Vec<TopicReassignment>,
 }
 
+/// One entity component returned by `DescribeClientQuotas`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientQuotaEntity {
+    /// Kafka quota entity type.
+    pub entity_type: String,
+    /// Entity name, or `None` for Kafka's default entity.
+    pub entity_name: Option<String>,
+}
+
+/// One quota key/value returned by `DescribeClientQuotas`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientQuotaValue {
+    /// Quota configuration key.
+    pub key: String,
+    /// Quota configuration value.
+    pub value: f64,
+}
+
+/// One quota entity entry returned by `DescribeClientQuotas`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClientQuotaEntry {
+    /// Entity components that identify this quota entry.
+    pub entity: Vec<ClientQuotaEntity>,
+    /// Quota values configured for the entity.
+    pub values: Vec<ClientQuotaValue>,
+}
+
+/// Parsed response from a `DescribeClientQuotas` request.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DescribeClientQuotasResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Optional top-level broker error message.
+    pub error_message: Option<String>,
+    /// Quota entries returned by the broker.
+    pub entries: Option<Vec<ClientQuotaEntry>>,
+}
+
+/// One SCRAM mechanism configured for a user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScramCredentialInfo {
+    /// Raw Kafka SCRAM mechanism code.
+    pub mechanism: i8,
+    /// Iteration count used for this SCRAM credential.
+    pub iterations: i32,
+}
+
+/// SCRAM credential description for one user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserScramCredentialsDescription {
+    /// User name.
+    pub user: String,
+    /// Per-user broker error code.
+    pub error_code: i16,
+    /// Optional per-user broker error message.
+    pub error_message: Option<String>,
+    /// SCRAM credentials configured for this user.
+    pub credential_infos: Vec<ScramCredentialInfo>,
+}
+
+/// Parsed response from a `DescribeUserScramCredentials` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeUserScramCredentialsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Optional top-level broker error message.
+    pub error_message: Option<String>,
+    /// User credential descriptions returned by the broker.
+    pub results: Vec<UserScramCredentialsDescription>,
+}
+
 /// State for one active producer returned by `DescribeProducers`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveProducer {
@@ -671,6 +845,76 @@ pub fn build_list_partition_reassignments_request(
     let request = ListPartitionReassignmentsRequest::default()
         .with_timeout_ms(timeout_ms)
         .with_topics(topics);
+
+    (header, request)
+}
+
+/// Build a `DescribeClientQuotas` request.
+pub fn build_describe_client_quotas_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &DescribeClientQuotasOptions,
+) -> (RequestHeader, DescribeClientQuotasRequest) {
+    use kafka_protocol::messages::describe_client_quotas_request::ComponentData;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeClientQuotas,
+        API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+    );
+    let request = DescribeClientQuotasRequest::default()
+        .with_components(
+            options
+                .components
+                .iter()
+                .map(|component| {
+                    ComponentData::default()
+                        .with_entity_type(StrBytes::from_string(component.entity_type.clone()))
+                        .with_match_type(component.match_type)
+                        .with_match(
+                            component
+                                .match_value
+                                .as_ref()
+                                .map(|value| StrBytes::from_string(value.clone())),
+                        )
+                })
+                .collect(),
+        )
+        .with_strict(options.strict);
+
+    (header, request)
+}
+
+/// Build a `DescribeUserScramCredentials` request.
+pub fn build_describe_user_scram_credentials_request(
+    correlation_id: i32,
+    client_id: &str,
+    users: Option<&[&str]>,
+) -> (RequestHeader, DescribeUserScramCredentialsRequest) {
+    use kafka_protocol::messages::describe_user_scram_credentials_request::UserName;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeUserScramCredentials,
+        API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    );
+    let users = users.and_then(|users| {
+        if users.is_empty() {
+            None
+        } else {
+            Some(
+                users
+                    .iter()
+                    .map(|user| {
+                        UserName::default().with_name(StrBytes::from_string((*user).to_owned()))
+                    })
+                    .collect(),
+            )
+        }
+    });
+    let request = DescribeUserScramCredentialsRequest::default().with_users(users);
 
     (header, request)
 }
@@ -959,6 +1203,68 @@ pub fn convert_list_partition_reassignments_response(
     }
 }
 
+/// Convert a generated `DescribeClientQuotasResponse` into the crate's public shape.
+pub fn convert_describe_client_quotas_response(
+    response: DescribeClientQuotasResponse,
+) -> DescribeClientQuotasResponseData {
+    DescribeClientQuotasResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|message| message.to_string()),
+        entries: response.entries.map(|entries| {
+            entries
+                .into_iter()
+                .map(|entry| ClientQuotaEntry {
+                    entity: entry
+                        .entity
+                        .into_iter()
+                        .map(|entity| ClientQuotaEntity {
+                            entity_type: entity.entity_type.to_string(),
+                            entity_name: entity.entity_name.map(|name| name.to_string()),
+                        })
+                        .collect(),
+                    values: entry
+                        .values
+                        .into_iter()
+                        .map(|value| ClientQuotaValue {
+                            key: value.key.to_string(),
+                            value: value.value,
+                        })
+                        .collect(),
+                })
+                .collect()
+        }),
+    }
+}
+
+/// Convert a generated `DescribeUserScramCredentialsResponse` into the crate's public shape.
+pub fn convert_describe_user_scram_credentials_response(
+    response: DescribeUserScramCredentialsResponse,
+) -> DescribeUserScramCredentialsResponseData {
+    DescribeUserScramCredentialsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|message| message.to_string()),
+        results: response
+            .results
+            .into_iter()
+            .map(|result| UserScramCredentialsDescription {
+                user: result.user.to_string(),
+                error_code: result.error_code,
+                error_message: result.error_message.map(|message| message.to_string()),
+                credential_infos: result
+                    .credential_infos
+                    .into_iter()
+                    .map(|credential| ScramCredentialInfo {
+                        mechanism: credential.mechanism,
+                        iterations: credential.iterations,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeProducersResponse` into the crate's public shape.
 pub fn convert_describe_producers_response(
     response: DescribeProducersResponse,
@@ -1081,6 +1387,10 @@ fn transactional_id(value: &str) -> kafka_protocol::messages::TransactionalId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kafka_protocol::messages::describe_client_quotas_response::{
+        EntityData as KpClientQuotaEntity, EntryData as KpClientQuotaEntry,
+        ValueData as KpClientQuotaValue,
+    };
     use kafka_protocol::messages::describe_cluster_response::DescribeClusterBroker;
     use kafka_protocol::messages::describe_configs_response::{
         DescribeConfigsResourceResult as KpDescribeConfigsResourceResult,
@@ -1101,6 +1411,10 @@ mod tests {
     };
     use kafka_protocol::messages::describe_transactions_response::{
         TopicData as KpDescribeTransactionTopic, TransactionState as KpDescribedTransactionState,
+    };
+    use kafka_protocol::messages::describe_user_scram_credentials_response::{
+        CredentialInfo as KpScramCredentialInfo,
+        DescribeUserScramCredentialsResult as KpScramCredentialsResult,
     };
     use kafka_protocol::messages::list_groups_response::ListedGroup as KpListedGroup;
     use kafka_protocol::messages::list_partition_reassignments_response::{
@@ -1232,9 +1546,65 @@ mod tests {
     }
 
     #[test]
+    fn describe_client_quotas_request_accepts_entity_filters() {
+        let options = DescribeClientQuotasOptions::new()
+            .with_component(ClientQuotaEntityFilter::exact("user", "alice"))
+            .with_component(ClientQuotaEntityFilter::default_entity("client-id"))
+            .with_component(ClientQuotaEntityFilter::any_specified("ip"))
+            .strict();
+        let (header, request) = build_describe_client_quotas_request(14, "client-i", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::DescribeClientQuotas as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_DESCRIBE_CLIENT_QUOTAS
+        );
+        assert!(request.strict);
+        assert_eq!(request.components.len(), 3);
+        assert_eq!(request.components[0].entity_type.to_string(), "user");
+        assert_eq!(request.components[0].match_type, CLIENT_QUOTA_MATCH_EXACT);
+        assert_eq!(
+            request.components[0]
+                ._match
+                .as_ref()
+                .map(ToString::to_string),
+            Some("alice".to_owned())
+        );
+        assert_eq!(request.components[1].match_type, CLIENT_QUOTA_MATCH_DEFAULT);
+        assert!(request.components[1]._match.is_none());
+        assert_eq!(
+            request.components[2].match_type,
+            CLIENT_QUOTA_MATCH_ANY_SPECIFIED
+        );
+        assert!(request.components[2]._match.is_none());
+    }
+
+    #[test]
+    fn describe_user_scram_credentials_request_distinguishes_all_and_selected_users() {
+        let (all_header, all_request) =
+            build_describe_user_scram_credentials_request(15, "client-j", None);
+        let (selected_header, selected_request) =
+            build_describe_user_scram_credentials_request(16, "client-k", Some(&["alice", "bob"]));
+
+        assert_eq!(
+            all_header.request_api_key,
+            ApiKey::DescribeUserScramCredentials as i16
+        );
+        assert_eq!(
+            all_header.request_api_version,
+            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
+        );
+        assert!(all_request.users.is_none());
+        assert_eq!(selected_header.correlation_id, 16);
+        let users = selected_request.users.unwrap();
+        assert_eq!(users[0].name.to_string(), "alice");
+        assert_eq!(users[1].name.to_string(), "bob");
+    }
+
+    #[test]
     fn describe_producers_request_uses_topic_partition_filters() {
         let filter = [TopicPartitionFilter::new("topic-a", [0, 1])];
-        let (header, request) = build_describe_producers_request(14, "client-i", &filter);
+        let (header, request) = build_describe_producers_request(17, "client-l", &filter);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeProducers as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_PRODUCERS);
@@ -1249,7 +1619,7 @@ mod tests {
             .with_producer_id_filters([42, 43])
             .with_duration_filter_ms(30_000)
             .with_transactional_id_pattern("rustfs-.*");
-        let (header, request) = build_list_transactions_request(15, "client-j", &options);
+        let (header, request) = build_list_transactions_request(18, "client-m", &options);
 
         assert_eq!(header.request_api_key, ApiKey::ListTransactions as i16);
         assert_eq!(header.request_api_version, API_VERSION_LIST_TRANSACTIONS);
@@ -1280,7 +1650,7 @@ mod tests {
     #[test]
     fn describe_transactions_request_includes_transactional_ids() {
         let (header, request) =
-            build_describe_transactions_request(16, "client-k", &["txn-a", "txn-b"]);
+            build_describe_transactions_request(19, "client-n", &["txn-a", "txn-b"]);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeTransactions as i16);
         assert_eq!(
@@ -1511,9 +1881,79 @@ mod tests {
     }
 
     #[test]
+    fn convert_describe_client_quotas_response_preserves_entities_and_values() {
+        let response = DescribeClientQuotasResponse::default()
+            .with_throttle_time_ms(17)
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("ok")))
+            .with_entries(Some(vec![
+                KpClientQuotaEntry::default()
+                    .with_entity(vec![
+                        KpClientQuotaEntity::default()
+                            .with_entity_type(StrBytes::from_static_str("user"))
+                            .with_entity_name(Some(StrBytes::from_static_str("alice"))),
+                        KpClientQuotaEntity::default()
+                            .with_entity_type(StrBytes::from_static_str("client-id"))
+                            .with_entity_name(None),
+                    ])
+                    .with_values(vec![
+                        KpClientQuotaValue::default()
+                            .with_key(StrBytes::from_static_str("producer_byte_rate"))
+                            .with_value(1024.5),
+                    ]),
+            ]));
+
+        let converted = convert_describe_client_quotas_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 17);
+        assert_eq!(converted.error_message, Some("ok".to_owned()));
+        let entry = &converted.entries.as_ref().unwrap()[0];
+        assert_eq!(entry.entity[0].entity_type, "user");
+        assert_eq!(entry.entity[0].entity_name, Some("alice".to_owned()));
+        assert_eq!(entry.entity[1].entity_type, "client-id");
+        assert!(entry.entity[1].entity_name.is_none());
+        assert_eq!(entry.values[0].key, "producer_byte_rate");
+        assert!((entry.values[0].value - 1024.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn convert_describe_user_scram_credentials_response_preserves_credentials() {
+        let response = DescribeUserScramCredentialsResponse::default()
+            .with_throttle_time_ms(18)
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("ok")))
+            .with_results(vec![
+                KpScramCredentialsResult::default()
+                    .with_user(StrBytes::from_static_str("alice"))
+                    .with_error_code(0)
+                    .with_error_message(Some(StrBytes::from_static_str("ok")))
+                    .with_credential_infos(vec![
+                        KpScramCredentialInfo::default()
+                            .with_mechanism(SCRAM_MECHANISM_SHA_256)
+                            .with_iterations(4096),
+                        KpScramCredentialInfo::default()
+                            .with_mechanism(SCRAM_MECHANISM_SHA_512)
+                            .with_iterations(8192),
+                    ]),
+            ]);
+
+        let converted = convert_describe_user_scram_credentials_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.error_message, Some("ok".to_owned()));
+        assert_eq!(converted.results[0].user, "alice");
+        assert_eq!(converted.results[0].credential_infos.len(), 2);
+        assert_eq!(
+            converted.results[0].credential_infos[0].mechanism,
+            SCRAM_MECHANISM_SHA_256
+        );
+        assert_eq!(converted.results[0].credential_infos[1].iterations, 8192);
+    }
+
+    #[test]
     fn convert_describe_producers_response_preserves_active_producers() {
         let response = DescribeProducersResponse::default()
-            .with_throttle_time_ms(17)
+            .with_throttle_time_ms(19)
             .with_topics(vec![
                 KpProducerTopic::default()
                     .with_name(StrBytes::from_static_str("topic-a").into())
@@ -1536,7 +1976,7 @@ mod tests {
 
         let converted = convert_describe_producers_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 17);
+        assert_eq!(converted.throttle_time_ms, 19);
         assert_eq!(converted.topics[0].name, "topic-a");
         assert_eq!(
             converted.topics[0].partitions[0].error_message,
@@ -1555,7 +1995,7 @@ mod tests {
     #[test]
     fn convert_list_transactions_response_preserves_state_filters_and_transactions() {
         let response = ListTransactionsResponse::default()
-            .with_throttle_time_ms(18)
+            .with_throttle_time_ms(20)
             .with_error_code(0)
             .with_unknown_state_filters(vec![StrBytes::from_static_str("UnknownState")])
             .with_transaction_states(vec![
@@ -1567,7 +2007,7 @@ mod tests {
 
         let converted = convert_list_transactions_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.throttle_time_ms, 20);
         assert_eq!(converted.unknown_state_filters, vec!["UnknownState"]);
         assert_eq!(
             converted.transaction_states,
@@ -1582,7 +2022,7 @@ mod tests {
     #[test]
     fn convert_describe_transactions_response_preserves_transaction_details() {
         let response = DescribeTransactionsResponse::default()
-            .with_throttle_time_ms(19)
+            .with_throttle_time_ms(21)
             .with_transaction_states(vec![
                 KpDescribedTransactionState::default()
                     .with_error_code(0)
@@ -1601,7 +2041,7 @@ mod tests {
 
         let converted = convert_describe_transactions_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 19);
+        assert_eq!(converted.throttle_time_ms, 21);
         assert_eq!(converted.transaction_states[0].transactional_id, "txn-a");
         assert_eq!(
             converted.transaction_states[0].transaction_timeout_ms,
