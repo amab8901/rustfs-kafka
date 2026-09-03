@@ -3008,3 +3008,84 @@ impl KafkaClientInternals for KafkaClient {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{ConnectionError, ProtocolError};
+
+    fn assert_no_host<T>(result: Result<T>) {
+        match result {
+            Err(Error::Connection(ConnectionError::NoHostReachable)) => {}
+            Err(err) => panic!("expected no host reachable, got {err}"),
+            Ok(_) => panic!("expected no host reachable, got success"),
+        }
+    }
+
+    #[test]
+    fn admin_mutation_apis_surface_no_host_without_bootstrap_brokers() {
+        let mut client = KafkaClient::new(vec![]);
+        let topic_partitions = [TopicPartitionFilter::new("topic-a", [0, 1])];
+
+        assert_no_host(
+            client.incremental_alter_configs(
+                &IncrementalAlterConfigsOptions::new([IncrementalAlterConfigsResource::topic(
+                    "topic-a",
+                    [IncrementalAlterConfig::set("retention.ms", "60000")],
+                )])
+                .with_validate_only(true),
+            ),
+        );
+        assert_no_host(client.create_partitions(&[CreatePartitionsTopicSpec::new("topic-a", 3)]));
+        assert_no_host(client.delete_records(
+            &[DeleteRecordsTopicSpec::new(
+                "topic-a",
+                [DeleteRecordsPartitionSpec::new(0, 42)],
+            )],
+            Duration::from_secs(5),
+        ));
+        assert_no_host(client.alter_partition_reassignments(
+            &AlterPartitionReassignmentsOptions::new([PartitionReassignmentTopicSpec::new(
+                "topic-a",
+                [PartitionReassignmentSpec::new(0, [1, 2])],
+            )]),
+        ));
+        assert_no_host(client.elect_preferred_leaders(&topic_partitions, Duration::from_secs(5)));
+        assert_no_host(
+            client.offsets_for_leader_epochs(&[LeaderEpochTopicRequest::new(
+                "topic-a",
+                [LeaderEpochPartitionRequest::new(0, -1, 7)],
+            )]),
+        );
+        assert_no_host(
+            client.alter_client_quotas(
+                &AlterClientQuotasOptions::new([ClientQuotaAlteration::new(
+                    [ClientQuotaEntitySpec::named("user", "alice")],
+                    [ClientQuotaAlterationOp::set("producer_byte_rate", 1024.5)],
+                )])
+                .with_validate_only(true),
+            ),
+        );
+    }
+
+    #[test]
+    fn timeout_validated_before_admin_request_routing() {
+        let mut client = KafkaClient::new(vec![]);
+        let too_large = Duration::from_millis(i32::MAX as u64 + 1);
+
+        assert!(matches!(
+            client.delete_records(
+                &[DeleteRecordsTopicSpec::new(
+                    "topic-a",
+                    [DeleteRecordsPartitionSpec::new(0, 42)],
+                )],
+                too_large,
+            ),
+            Err(Error::Protocol(ProtocolError::InvalidDuration))
+        ));
+        assert!(matches!(
+            client.elect_unclean_leaders(&[TopicPartitionFilter::new("topic-a", [0])], too_large),
+            Err(Error::Protocol(ProtocolError::InvalidDuration))
+        ));
+    }
+}

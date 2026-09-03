@@ -4676,6 +4676,56 @@ mod tests {
     }
 
     #[test]
+    fn admin_mutation_option_builders_expose_safe_defaults() {
+        let config =
+            IncrementalAlterConfig::subtract("leader.replication.throttled.replicas", "1:2");
+        assert_eq!(config.operation, CONFIG_OPERATION_SUBTRACT);
+        assert_eq!(config.value, Some("1:2".to_owned()));
+
+        let config_options =
+            IncrementalAlterConfigsOptions::new([IncrementalAlterConfigsResource::broker_logger(
+                "1",
+                [config],
+            )]);
+        assert!(!config_options.validate_only);
+        assert_eq!(
+            config_options.resources[0].resource_type,
+            CONFIG_RESOURCE_TYPE_BROKER_LOGGER
+        );
+
+        let create_options =
+            CreatePartitionsOptions::new([CreatePartitionsTopicSpec::new("topic-a", 4)]);
+        assert_eq!(create_options.timeout_ms, 60_000);
+        assert!(!create_options.validate_only);
+        assert!(create_options.topics[0].assignments.is_none());
+
+        let election_options = ElectLeadersOptions::all_partitions(ELECTION_TYPE_PREFERRED);
+        assert_eq!(election_options.timeout_ms, 60_000);
+        assert!(election_options.topic_partitions.is_none());
+
+        let reassignment_options =
+            AlterPartitionReassignmentsOptions::new([PartitionReassignmentTopicSpec::new(
+                "topic-a",
+                [PartitionReassignmentSpec::cancel(0)],
+            )]);
+        assert_eq!(reassignment_options.timeout_ms, 60_000);
+        assert!(reassignment_options.allow_replication_factor_change);
+        assert!(
+            reassignment_options.topics[0].partitions[0]
+                .replicas
+                .is_none()
+        );
+
+        let quota_options = AlterClientQuotasOptions::new([ClientQuotaAlteration::new(
+            [ClientQuotaEntitySpec::default_entity("client-id")],
+            [ClientQuotaAlterationOp::remove("producer_byte_rate")],
+        )]);
+        assert!(!quota_options.validate_only);
+        assert!(quota_options.entries[0].entity[0].entity_name.is_none());
+        assert!(quota_options.entries[0].ops[0].remove);
+    }
+
+    #[test]
     fn list_partition_reassignments_request_accepts_timeout_and_filter() {
         let filter = [TopicPartitionFilter::new("topic-a", [1])];
         let (header, request) =

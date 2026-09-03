@@ -96,3 +96,54 @@ pub use rustfs_kafka::client::{
 };
 pub use rustfs_kafka::error;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};
+
+#[cfg(test)]
+mod public_reexports_tests {
+    use super::*;
+
+    #[test]
+    fn admin_mutation_reexports_are_constructible() {
+        let configs =
+            IncrementalAlterConfigsOptions::new([IncrementalAlterConfigsResource::topic(
+                "topic-a",
+                [
+                    IncrementalAlterConfig::set("retention.ms", "60000"),
+                    IncrementalAlterConfig::delete("cleanup.policy"),
+                ],
+            )])
+            .with_validate_only(true);
+        assert!(configs.validate_only);
+
+        let quota = AlterClientQuotasOptions::new([ClientQuotaAlteration::new(
+            [
+                ClientQuotaEntitySpec::named("user", "alice"),
+                ClientQuotaEntitySpec::default_entity("client-id"),
+            ],
+            [
+                ClientQuotaAlterationOp::set("producer_byte_rate", 1024.5),
+                ClientQuotaAlterationOp::remove("consumer_byte_rate"),
+            ],
+        )])
+        .with_validate_only(true);
+        assert!(quota.validate_only);
+
+        let create_partitions =
+            CreatePartitionsOptions::new([CreatePartitionsTopicSpec::new("topic-a", 6)])
+                .with_validate_only(true);
+        assert_eq!(create_partitions.topics[0].count, 6);
+
+        let reassignment =
+            AlterPartitionReassignmentsOptions::new([PartitionReassignmentTopicSpec::new(
+                "topic-a",
+                [
+                    PartitionReassignmentSpec::new(0, [1, 2]),
+                    PartitionReassignmentSpec::cancel(1),
+                ],
+            )]);
+        assert!(reassignment.topics[0].partitions[1].replicas.is_none());
+
+        let leader_epoch =
+            LeaderEpochTopicRequest::new("topic-a", [LeaderEpochPartitionRequest::new(0, -1, 7)]);
+        assert_eq!(leader_epoch.partitions[0].leader_epoch, 7);
+    }
+}
