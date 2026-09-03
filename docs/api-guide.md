@@ -130,7 +130,7 @@ tx.commit().unwrap();
 
 ```rust,no_run
 use std::time::Duration;
-use rustfs_kafka::client::{ConfigResource, KafkaClient, TopicPartitionFilter};
+use rustfs_kafka::client::{ConfigResource, KafkaClient, ListTransactionsOptions, TopicPartitionFilter};
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
 
@@ -194,6 +194,30 @@ let producers = client.describe_producers(&partitions).unwrap();
 for topic in producers.topics {
     println!("topic={} producer_partitions={}", topic.name, topic.partitions.len());
 }
+
+let transaction_filter = ListTransactionsOptions::new()
+    .with_state_filters(["Ongoing"])
+    .with_duration_filter_ms(30_000)
+    .with_transactional_id_pattern("rustfs-.*");
+let transactions = client
+    .list_transactions_with_options(&transaction_filter)
+    .unwrap();
+for transaction in transactions.transaction_states {
+    println!(
+        "transactional_id={} state={}",
+        transaction.transactional_id,
+        transaction.transaction_state
+    );
+}
+
+let described_transactions = client.describe_transactions(&["rustfs-txn-a"]).unwrap();
+for transaction in described_transactions.transaction_states {
+    println!(
+        "transactional_id={} partitions={}",
+        transaction.transactional_id,
+        transaction.topics.len()
+    );
+}
 ```
 
 Optional variants expose the highest fields currently wired from `kafka-protocol`:
@@ -204,6 +228,7 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
 - `describe_log_dirs_for(topic_partition_filters)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
+- `list_transactions_with_options(options)`
 
 ### 4.3 Topic create/delete
 

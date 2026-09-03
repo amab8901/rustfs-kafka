@@ -9,9 +9,10 @@ use std::collections::HashMap;
 use crate::error::{Error, Result};
 use crate::protocol::{
     API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_GROUPS,
-    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_FETCH,
-    API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
-    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
+    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
+    API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+    API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
     API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
 };
 use tracing::{debug, info};
@@ -36,6 +37,8 @@ pub mod api_key {
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
     pub const DESCRIBE_CLUSTER: i16 = 60;
     pub const DESCRIBE_PRODUCERS: i16 = 61;
+    pub const DESCRIBE_TRANSACTIONS: i16 = 65;
+    pub const LIST_TRANSACTIONS: i16 = 66;
 }
 
 /// One Kafka API version range advertised by a broker.
@@ -307,6 +310,8 @@ impl ApiVersionCache {
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
             api_key::DESCRIBE_PRODUCERS => API_VERSION_DESCRIBE_PRODUCERS,
+            api_key::DESCRIBE_TRANSACTIONS => API_VERSION_DESCRIBE_TRANSACTIONS,
+            api_key::LIST_TRANSACTIONS => API_VERSION_LIST_TRANSACTIONS,
             _ => 0,
         }
     }
@@ -399,6 +404,18 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             api_key::DESCRIBE_PRODUCERS,
             API_VERSION_DESCRIBE_PRODUCERS,
         ),
+        describe_transactions: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_TRANSACTIONS,
+            API_VERSION_DESCRIBE_TRANSACTIONS,
+        ),
+        list_transactions: resolve_api_version(
+            cache,
+            host,
+            api_key::LIST_TRANSACTIONS,
+            API_VERSION_LIST_TRANSACTIONS,
+        ),
     }
 }
 
@@ -420,6 +437,8 @@ pub struct ApiVersions {
     pub list_partition_reassignments: i16,
     pub describe_cluster: i16,
     pub describe_producers: i16,
+    pub describe_transactions: i16,
+    pub list_transactions: i16,
 }
 
 impl Default for ApiVersions {
@@ -439,6 +458,8 @@ impl Default for ApiVersions {
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
             describe_producers: API_VERSION_DESCRIBE_PRODUCERS,
+            describe_transactions: API_VERSION_DESCRIBE_TRANSACTIONS,
+            list_transactions: API_VERSION_LIST_TRANSACTIONS,
         }
     }
 }
@@ -585,6 +606,8 @@ mod tests {
         );
         assert_eq!(v.describe_cluster, API_VERSION_DESCRIBE_CLUSTER);
         assert_eq!(v.describe_producers, API_VERSION_DESCRIBE_PRODUCERS);
+        assert_eq!(v.describe_transactions, API_VERSION_DESCRIBE_TRANSACTIONS);
+        assert_eq!(v.list_transactions, API_VERSION_LIST_TRANSACTIONS);
     }
 
     #[test]
@@ -609,6 +632,8 @@ mod tests {
         );
         assert_eq!(v.describe_cluster, d.describe_cluster);
         assert_eq!(v.describe_producers, d.describe_producers);
+        assert_eq!(v.describe_transactions, d.describe_transactions);
+        assert_eq!(v.list_transactions, d.list_transactions);
     }
 
     #[test]
@@ -668,6 +693,14 @@ mod tests {
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::DESCRIBE_PRODUCERS),
             API_VERSION_DESCRIBE_PRODUCERS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_TRANSACTIONS),
+            API_VERSION_DESCRIBE_TRANSACTIONS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::LIST_TRANSACTIONS),
+            API_VERSION_LIST_TRANSACTIONS
         );
     }
 

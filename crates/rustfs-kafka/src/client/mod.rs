@@ -11,9 +11,10 @@
 //! - **Metadata queries** via `load_metadata_all()` / `load_metadata()`
 //! - **Offset management** via `fetch_offsets()` / `commit_offsets()`
 //! - **Topic management** via `create_topics()` / `delete_topics()`
-//! - **Cluster, config, broker storage, producer, API version, and group inspection** via
+//! - **Cluster, config, broker storage, producer, transaction, API version, and group inspection** via
 //!   `describe_cluster()` / `describe_configs()` / `describe_log_dirs()` /
-//!   `describe_producers()` / `fetch_api_versions()` / `list_groups()` / `describe_groups()`
+//!   `describe_producers()` / `list_transactions()` / `fetch_api_versions()` /
+//!   `list_groups()` / `describe_groups()`
 //!
 //! # Examples
 //!
@@ -52,10 +53,11 @@ pub use crate::protocol::admin::{
     ActiveProducer, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
     DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
     DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
-    DescribedGroup, DescribedGroupMember, ListGroupsResponseData,
-    ListPartitionReassignmentsResponseData, ListedGroup, LogDirDescription, LogDirPartition,
-    LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, TopicPartitionFilter,
-    TopicReassignment,
+    DescribeTransactionsResponseData, DescribedGroup, DescribedGroupMember, DescribedTransaction,
+    ListGroupsResponseData, ListPartitionReassignmentsResponseData, ListTransactionsOptions,
+    ListTransactionsResponseData, ListedGroup, ListedTransaction, LogDirDescription,
+    LogDirPartition, LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic,
+    TopicPartitionFilter, TopicReassignment, TransactionTopic,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
@@ -1124,6 +1126,121 @@ impl KafkaClient {
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeProducers")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Lists transactions visible to the contacted broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn list_transactions(&mut self) -> Result<ListTransactionsResponseData> {
+        self.list_transactions_with_options(&ListTransactionsOptions::default())
+    }
+
+    /// Lists transactions using Kafka state, producer ID, duration, or ID pattern filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn list_transactions_with_options(
+        &mut self,
+        options: &ListTransactionsOptions,
+    ) -> Result<ListTransactionsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ListTransactions"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_list_transactions_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_LIST_TRANSACTIONS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::ListTransactionsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_LIST_TRANSACTIONS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_list_transactions_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ListTransactions")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes detailed transaction state for the supplied transactional IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_transactions(
+        &mut self,
+        transactional_ids: &[&str],
+    ) -> Result<DescribeTransactionsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeTransactions"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_transactions_request(
+                correlation_id,
+                &self.config.client_id,
+                transactional_ids,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DescribeTransactionsResponse,
+                >(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_transactions_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTransactions")),
             }
         }
 

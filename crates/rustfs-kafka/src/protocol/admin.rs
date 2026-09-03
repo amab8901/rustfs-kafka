@@ -4,16 +4,18 @@ use bytes::Bytes;
 use kafka_protocol::messages::{
     ApiKey, DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
     DescribeConfigsResponse, DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest,
-    DescribeLogDirsResponse, DescribeProducersRequest, DescribeProducersResponse, GroupId,
-    ListGroupsRequest, ListGroupsResponse, ListPartitionReassignmentsRequest,
-    ListPartitionReassignmentsResponse, RequestHeader,
+    DescribeLogDirsResponse, DescribeProducersRequest, DescribeProducersResponse,
+    DescribeTransactionsRequest, DescribeTransactionsResponse, GroupId, ListGroupsRequest,
+    ListGroupsResponse, ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse,
+    ListTransactionsRequest, ListTransactionsResponse, RequestHeader,
 };
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
     API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_GROUPS,
-    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_LIST_GROUPS,
-    API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_LIST_GROUPS,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -98,6 +100,62 @@ impl TopicPartitionFilter {
             topic: topic.into(),
             partitions: partitions.into_iter().collect(),
         }
+    }
+}
+
+/// Filters for a `ListTransactions` request.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ListTransactionsOptions {
+    /// Transaction states to include, or empty to include all states.
+    pub state_filters: Vec<String>,
+    /// Producer IDs to include, or empty to include all producer IDs.
+    pub producer_id_filters: Vec<i64>,
+    /// Minimum running duration in milliseconds, or `None` to include all durations.
+    pub duration_filter_ms: Option<i64>,
+    /// Optional transactional ID regular expression pattern.
+    pub transactional_id_pattern: Option<String>,
+}
+
+impl ListTransactionsOptions {
+    /// Create default options that list all transactions visible to the broker.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Restrict the request to the supplied transaction states.
+    #[must_use]
+    pub fn with_state_filters<I, S>(mut self, states: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.state_filters = states.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Restrict the request to the supplied producer IDs.
+    #[must_use]
+    pub fn with_producer_id_filters<I>(mut self, producer_ids: I) -> Self
+    where
+        I: IntoIterator<Item = i64>,
+    {
+        self.producer_id_filters = producer_ids.into_iter().collect();
+        self
+    }
+
+    /// Restrict the request to transactions running longer than the supplied duration.
+    #[must_use]
+    pub fn with_duration_filter_ms(mut self, duration_ms: i64) -> Self {
+        self.duration_filter_ms = Some(duration_ms);
+        self
+    }
+
+    /// Restrict the request to transactional IDs matching the supplied pattern.
+    #[must_use]
+    pub fn with_transactional_id_pattern(mut self, pattern: impl Into<String>) -> Self {
+        self.transactional_id_pattern = Some(pattern.into());
+        self
     }
 }
 
@@ -395,6 +453,69 @@ pub struct DescribeProducersResponseData {
     pub topics: Vec<ProducerTopic>,
 }
 
+/// Summary state for one transaction returned by `ListTransactions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedTransaction {
+    /// Transactional ID.
+    pub transactional_id: String,
+    /// Producer ID currently associated with the transaction.
+    pub producer_id: i64,
+    /// Current transaction state.
+    pub transaction_state: String,
+}
+
+/// Parsed response from a `ListTransactions` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTransactionsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Requested state filters unknown to the transaction coordinator.
+    pub unknown_state_filters: Vec<String>,
+    /// Transaction summaries returned by the broker.
+    pub transaction_states: Vec<ListedTransaction>,
+}
+
+/// Topic partitions included in a described transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransactionTopic {
+    /// Topic name.
+    pub topic: String,
+    /// Partition IDs included in the transaction.
+    pub partitions: Vec<i32>,
+}
+
+/// Detailed state for one transaction returned by `DescribeTransactions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribedTransaction {
+    /// Per-transaction broker error code.
+    pub error_code: i16,
+    /// Transactional ID.
+    pub transactional_id: String,
+    /// Current transaction state.
+    pub transaction_state: String,
+    /// Transaction timeout in milliseconds.
+    pub transaction_timeout_ms: i32,
+    /// Transaction start time in milliseconds since Unix epoch.
+    pub transaction_start_time_ms: i64,
+    /// Producer ID currently associated with the transaction.
+    pub producer_id: i64,
+    /// Producer epoch currently associated with the transaction.
+    pub producer_epoch: i16,
+    /// Topic partitions included in the current transaction.
+    pub topics: Vec<TransactionTopic>,
+}
+
+/// Parsed response from a `DescribeTransactions` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeTransactionsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Detailed transaction states returned by the broker.
+    pub transaction_states: Vec<DescribedTransaction>,
+}
+
 /// Build a `DescribeCluster` request.
 pub fn build_describe_cluster_request(
     correlation_id: i32,
@@ -577,6 +698,67 @@ pub fn build_describe_producers_request(
         })
         .collect();
     let request = DescribeProducersRequest::default().with_topics(topics);
+
+    (header, request)
+}
+
+/// Build a `ListTransactions` request.
+pub fn build_list_transactions_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &ListTransactionsOptions,
+) -> (RequestHeader, ListTransactionsRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::ListTransactions,
+        API_VERSION_LIST_TRANSACTIONS,
+    );
+    let request = ListTransactionsRequest::default()
+        .with_state_filters(
+            options
+                .state_filters
+                .iter()
+                .map(|state| StrBytes::from_string(state.clone()))
+                .collect(),
+        )
+        .with_producer_id_filters(
+            options
+                .producer_id_filters
+                .iter()
+                .copied()
+                .map(Into::into)
+                .collect(),
+        )
+        .with_duration_filter(options.duration_filter_ms.unwrap_or(-1))
+        .with_transactional_id_pattern(
+            options
+                .transactional_id_pattern
+                .as_ref()
+                .map(|pattern| StrBytes::from_string(pattern.clone())),
+        );
+
+    (header, request)
+}
+
+/// Build a `DescribeTransactions` request.
+pub fn build_describe_transactions_request(
+    correlation_id: i32,
+    client_id: &str,
+    transactional_ids: &[&str],
+) -> (RequestHeader, DescribeTransactionsRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeTransactions,
+        API_VERSION_DESCRIBE_TRANSACTIONS,
+    );
+    let request = DescribeTransactionsRequest::default().with_transactional_ids(
+        transactional_ids
+            .iter()
+            .map(|id| transactional_id(id))
+            .collect(),
+    );
 
     (header, request)
 }
@@ -814,6 +996,60 @@ pub fn convert_describe_producers_response(
     }
 }
 
+/// Convert a generated `ListTransactionsResponse` into the crate's public shape.
+pub fn convert_list_transactions_response(
+    response: ListTransactionsResponse,
+) -> ListTransactionsResponseData {
+    ListTransactionsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        unknown_state_filters: response
+            .unknown_state_filters
+            .into_iter()
+            .map(|state| state.to_string())
+            .collect(),
+        transaction_states: response
+            .transaction_states
+            .into_iter()
+            .map(|transaction| ListedTransaction {
+                transactional_id: transaction.transactional_id.to_string(),
+                producer_id: i64::from(transaction.producer_id),
+                transaction_state: transaction.transaction_state.to_string(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `DescribeTransactionsResponse` into the crate's public shape.
+pub fn convert_describe_transactions_response(
+    response: DescribeTransactionsResponse,
+) -> DescribeTransactionsResponseData {
+    DescribeTransactionsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        transaction_states: response
+            .transaction_states
+            .into_iter()
+            .map(|transaction| DescribedTransaction {
+                error_code: transaction.error_code,
+                transactional_id: transaction.transactional_id.to_string(),
+                transaction_state: transaction.transaction_state.to_string(),
+                transaction_timeout_ms: transaction.transaction_timeout_ms,
+                transaction_start_time_ms: transaction.transaction_start_time_ms,
+                producer_id: i64::from(transaction.producer_id),
+                producer_epoch: transaction.producer_epoch,
+                topics: transaction
+                    .topics
+                    .into_iter()
+                    .map(|topic| TransactionTopic {
+                        topic: topic.topic.to_string(),
+                        partitions: topic.partitions,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 fn request_header(
     correlation_id: i32,
     client_id: &str,
@@ -838,6 +1074,10 @@ fn group_id(value: &str) -> GroupId {
     GroupId::from(StrBytes::from_string(value.to_owned()))
 }
 
+fn transactional_id(value: &str) -> kafka_protocol::messages::TransactionalId {
+    kafka_protocol::messages::TransactionalId::from(StrBytes::from_string(value.to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -859,11 +1099,15 @@ mod tests {
         PartitionResponse as KpProducerPartition, ProducerState as KpProducerState,
         TopicResponse as KpProducerTopic,
     };
+    use kafka_protocol::messages::describe_transactions_response::{
+        TopicData as KpDescribeTransactionTopic, TransactionState as KpDescribedTransactionState,
+    };
     use kafka_protocol::messages::list_groups_response::ListedGroup as KpListedGroup;
     use kafka_protocol::messages::list_partition_reassignments_response::{
         OngoingPartitionReassignment as KpOngoingPartitionReassignment,
         OngoingTopicReassignment as KpOngoingTopicReassignment,
     };
+    use kafka_protocol::messages::list_transactions_response::TransactionState as KpListedTransactionState;
     use kafka_protocol::messages::{BrokerId, ProducerId};
 
     #[test]
@@ -996,6 +1240,55 @@ mod tests {
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_PRODUCERS);
         assert_eq!(request.topics[0].name.to_string(), "topic-a");
         assert_eq!(request.topics[0].partition_indexes, vec![0, 1]);
+    }
+
+    #[test]
+    fn list_transactions_request_accepts_all_filters() {
+        let options = ListTransactionsOptions::new()
+            .with_state_filters(["Ongoing", "PrepareCommit"])
+            .with_producer_id_filters([42, 43])
+            .with_duration_filter_ms(30_000)
+            .with_transactional_id_pattern("rustfs-.*");
+        let (header, request) = build_list_transactions_request(15, "client-j", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::ListTransactions as i16);
+        assert_eq!(header.request_api_version, API_VERSION_LIST_TRANSACTIONS);
+        assert_eq!(
+            request.state_filters,
+            vec![
+                StrBytes::from_static_str("Ongoing"),
+                StrBytes::from_static_str("PrepareCommit"),
+            ]
+        );
+        assert_eq!(
+            request
+                .producer_id_filters
+                .into_iter()
+                .map(i64::from)
+                .collect::<Vec<_>>(),
+            vec![42, 43]
+        );
+        assert_eq!(request.duration_filter, 30_000);
+        assert_eq!(
+            request
+                .transactional_id_pattern
+                .map(|value| value.to_string()),
+            Some("rustfs-.*".to_owned())
+        );
+    }
+
+    #[test]
+    fn describe_transactions_request_includes_transactional_ids() {
+        let (header, request) =
+            build_describe_transactions_request(16, "client-k", &["txn-a", "txn-b"]);
+
+        assert_eq!(header.request_api_key, ApiKey::DescribeTransactions as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_DESCRIBE_TRANSACTIONS
+        );
+        assert_eq!(request.transactional_ids[0].to_string(), "txn-a");
+        assert_eq!(request.transactional_ids[1].to_string(), "txn-b");
     }
 
     #[test]
@@ -1256,6 +1549,70 @@ mod tests {
         assert_eq!(
             converted.topics[0].partitions[0].active_producers[0].current_txn_start_offset,
             99
+        );
+    }
+
+    #[test]
+    fn convert_list_transactions_response_preserves_state_filters_and_transactions() {
+        let response = ListTransactionsResponse::default()
+            .with_throttle_time_ms(18)
+            .with_error_code(0)
+            .with_unknown_state_filters(vec![StrBytes::from_static_str("UnknownState")])
+            .with_transaction_states(vec![
+                KpListedTransactionState::default()
+                    .with_transactional_id(transactional_id("txn-a"))
+                    .with_producer_id(ProducerId::from(42))
+                    .with_transaction_state(StrBytes::from_static_str("Ongoing")),
+            ]);
+
+        let converted = convert_list_transactions_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.unknown_state_filters, vec!["UnknownState"]);
+        assert_eq!(
+            converted.transaction_states,
+            vec![ListedTransaction {
+                transactional_id: "txn-a".to_owned(),
+                producer_id: 42,
+                transaction_state: "Ongoing".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn convert_describe_transactions_response_preserves_transaction_details() {
+        let response = DescribeTransactionsResponse::default()
+            .with_throttle_time_ms(19)
+            .with_transaction_states(vec![
+                KpDescribedTransactionState::default()
+                    .with_error_code(0)
+                    .with_transactional_id(transactional_id("txn-a"))
+                    .with_transaction_state(StrBytes::from_static_str("Ongoing"))
+                    .with_transaction_timeout_ms(60_000)
+                    .with_transaction_start_time_ms(1_700_000)
+                    .with_producer_id(ProducerId::from(42))
+                    .with_producer_epoch(3)
+                    .with_topics(vec![
+                        KpDescribeTransactionTopic::default()
+                            .with_topic(StrBytes::from_static_str("topic-a").into())
+                            .with_partitions(vec![0, 1]),
+                    ]),
+            ]);
+
+        let converted = convert_describe_transactions_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 19);
+        assert_eq!(converted.transaction_states[0].transactional_id, "txn-a");
+        assert_eq!(
+            converted.transaction_states[0].transaction_timeout_ms,
+            60_000
+        );
+        assert_eq!(converted.transaction_states[0].producer_id, 42);
+        assert_eq!(converted.transaction_states[0].producer_epoch, 3);
+        assert_eq!(converted.transaction_states[0].topics[0].topic, "topic-a");
+        assert_eq!(
+            converted.transaction_states[0].topics[0].partitions,
+            vec![0, 1]
         );
     }
 }

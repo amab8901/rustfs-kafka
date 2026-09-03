@@ -46,10 +46,12 @@ pub use rustfs_kafka::client::{
     ActiveProducer, ApiVersionsResponseData, BrokerApiVersion, ClusterBroker, ConfigEntry,
     ConfigResource, ConfigSynonym, DescribeClusterResponseData, DescribeConfigsResponseData,
     DescribeConfigsResult, DescribeGroupsResponseData, DescribeLogDirsResponseData,
-    DescribeProducersResponseData, DescribedGroup, DescribedGroupMember, ListGroupsResponseData,
-    ListPartitionReassignmentsResponseData, ListedGroup, LogDirDescription, LogDirPartition,
-    LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, RequiredAcks, SaslConfig,
-    SecurityConfig, TlsConfig, TopicPartitionFilter, TopicReassignment,
+    DescribeProducersResponseData, DescribeTransactionsResponseData, DescribedGroup,
+    DescribedGroupMember, DescribedTransaction, ListGroupsResponseData,
+    ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
+    ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition, LogDirTopic,
+    PartitionReassignment, ProducerPartition, ProducerTopic, RequiredAcks, SaslConfig,
+    SecurityConfig, TlsConfig, TopicPartitionFilter, TopicReassignment, TransactionTopic,
 };
 pub use rustfs_kafka::error;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};
