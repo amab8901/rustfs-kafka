@@ -12,23 +12,26 @@ use crate::protocol::{
     API_VERSION_ALTER_CONFIGS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
     API_VERSION_ALTER_REPLICA_LOG_DIRS, API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
     API_VERSION_ALTER_USER_SCRAM_CREDENTIALS, API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
-    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS,
-    API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
-    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
-    API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
-    API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
-    API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
-    API_VERSION_DESCRIBE_QUORUM, API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
-    API_VERSION_DESCRIBE_TOPIC_PARTITIONS, API_VERSION_DESCRIBE_TRANSACTIONS,
-    API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS, API_VERSION_ELECT_LEADERS,
-    API_VERSION_EXPIRE_DELEGATION_TOKEN, API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR,
+    API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CONSUMER_GROUP_HEARTBEAT,
+    API_VERSION_CREATE_ACLS, API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS,
+    API_VERSION_DELETE_ACLS, API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS,
+    API_VERSION_DELETE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_ACLS,
+    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
+    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
+    API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+    API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+    API_VERSION_ELECT_LEADERS, API_VERSION_EXPIRE_DELEGATION_TOKEN, API_VERSION_FETCH,
+    API_VERSION_FIND_COORDINATOR, API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
     API_VERSION_INCREMENTAL_ALTER_CONFIGS, API_VERSION_LIST_CONFIG_RESOURCES,
     API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
     API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
     API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
-    API_VERSION_PRODUCE, API_VERSION_REMOVE_RAFT_VOTER, API_VERSION_RENEW_DELEGATION_TOKEN,
-    API_VERSION_SHARE_GROUP_DESCRIBE, API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER,
-    API_VERSION_UPDATE_FEATURES, API_VERSION_UPDATE_RAFT_VOTER,
+    API_VERSION_PRODUCE, API_VERSION_PUSH_TELEMETRY, API_VERSION_REMOVE_RAFT_VOTER,
+    API_VERSION_RENEW_DELEGATION_TOKEN, API_VERSION_SHARE_ACKNOWLEDGE, API_VERSION_SHARE_FETCH,
+    API_VERSION_SHARE_GROUP_DESCRIBE, API_VERSION_SHARE_GROUP_HEARTBEAT,
+    API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER, API_VERSION_UPDATE_FEATURES,
+    API_VERSION_UPDATE_RAFT_VOTER,
 };
 use tracing::{debug, info};
 
@@ -78,13 +81,19 @@ pub mod api_key {
     pub const UNREGISTER_BROKER: i16 = 64;
     pub const DESCRIBE_TRANSACTIONS: i16 = 65;
     pub const LIST_TRANSACTIONS: i16 = 66;
+    pub const CONSUMER_GROUP_HEARTBEAT: i16 = 68;
     pub const CONSUMER_GROUP_DESCRIBE: i16 = 69;
+    pub const GET_TELEMETRY_SUBSCRIPTIONS: i16 = 71;
+    pub const PUSH_TELEMETRY: i16 = 72;
     pub const ADD_OFFSETS_TO_TXN: i16 = 25;
     pub const TXN_OFFSET_COMMIT: i16 = 28;
     pub const ASSIGN_REPLICAS_TO_DIRS: i16 = 73;
     pub const LIST_CONFIG_RESOURCES: i16 = 74;
     pub const DESCRIBE_TOPIC_PARTITIONS: i16 = 75;
+    pub const SHARE_GROUP_HEARTBEAT: i16 = 76;
     pub const SHARE_GROUP_DESCRIBE: i16 = 77;
+    pub const SHARE_FETCH: i16 = 78;
+    pub const SHARE_ACKNOWLEDGE: i16 = 79;
     pub const ADD_RAFT_VOTER: i16 = 80;
     pub const REMOVE_RAFT_VOTER: i16 = 81;
     pub const UPDATE_RAFT_VOTER: i16 = 82;
@@ -392,12 +401,18 @@ impl ApiVersionCache {
             api_key::UPDATE_RAFT_VOTER => API_VERSION_UPDATE_RAFT_VOTER,
             api_key::DESCRIBE_TRANSACTIONS => API_VERSION_DESCRIBE_TRANSACTIONS,
             api_key::LIST_TRANSACTIONS => API_VERSION_LIST_TRANSACTIONS,
+            api_key::CONSUMER_GROUP_HEARTBEAT => API_VERSION_CONSUMER_GROUP_HEARTBEAT,
             api_key::ADD_OFFSETS_TO_TXN => API_VERSION_ADD_OFFSETS_TO_TXN,
             api_key::TXN_OFFSET_COMMIT => API_VERSION_TXN_OFFSET_COMMIT,
             api_key::CONSUMER_GROUP_DESCRIBE => API_VERSION_CONSUMER_GROUP_DESCRIBE,
+            api_key::GET_TELEMETRY_SUBSCRIPTIONS => API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
+            api_key::PUSH_TELEMETRY => API_VERSION_PUSH_TELEMETRY,
             api_key::LIST_CONFIG_RESOURCES => API_VERSION_LIST_CONFIG_RESOURCES,
             api_key::DESCRIBE_TOPIC_PARTITIONS => API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
             api_key::SHARE_GROUP_DESCRIBE => API_VERSION_SHARE_GROUP_DESCRIBE,
+            api_key::SHARE_GROUP_HEARTBEAT => API_VERSION_SHARE_GROUP_HEARTBEAT,
+            api_key::SHARE_FETCH => API_VERSION_SHARE_FETCH,
+            api_key::SHARE_ACKNOWLEDGE => API_VERSION_SHARE_ACKNOWLEDGE,
             api_key::DESCRIBE_SHARE_GROUP_OFFSETS => API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
             api_key::ALTER_SHARE_GROUP_OFFSETS => API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
             api_key::DELETE_SHARE_GROUP_OFFSETS => API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
@@ -446,6 +461,11 @@ fn resolve_core_api_versions(cache: &ApiVersionCache, host: &str, versions: &mut
     versions.find_coordinator = version!(FIND_COORDINATOR, API_VERSION_FIND_COORDINATOR);
     versions.offset_commit = version!(OFFSET_COMMIT, API_VERSION_OFFSET_COMMIT);
     versions.offset_fetch = version!(OFFSET_FETCH, API_VERSION_OFFSET_FETCH);
+    versions.get_telemetry_subscriptions = version!(
+        GET_TELEMETRY_SUBSCRIPTIONS,
+        API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS
+    );
+    versions.push_telemetry = version!(PUSH_TELEMETRY, API_VERSION_PUSH_TELEMETRY);
 }
 
 fn resolve_admin_api_versions(cache: &ApiVersionCache, host: &str, versions: &mut ApiVersions) {
@@ -553,6 +573,10 @@ fn resolve_group_api_versions(cache: &ApiVersionCache, host: &str, versions: &mu
     versions.describe_groups = version!(DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS);
     versions.list_groups = version!(LIST_GROUPS, API_VERSION_LIST_GROUPS);
     versions.delete_groups = version!(DELETE_GROUPS, API_VERSION_DELETE_GROUPS);
+    versions.consumer_group_heartbeat = version!(
+        CONSUMER_GROUP_HEARTBEAT,
+        API_VERSION_CONSUMER_GROUP_HEARTBEAT
+    );
     versions.offset_delete = version!(OFFSET_DELETE, API_VERSION_OFFSET_DELETE);
     versions.describe_client_quotas =
         version!(DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLIENT_QUOTAS);
@@ -561,6 +585,10 @@ fn resolve_group_api_versions(cache: &ApiVersionCache, host: &str, versions: &mu
         version!(CONSUMER_GROUP_DESCRIBE, API_VERSION_CONSUMER_GROUP_DESCRIBE);
     versions.share_group_describe =
         version!(SHARE_GROUP_DESCRIBE, API_VERSION_SHARE_GROUP_DESCRIBE);
+    versions.share_group_heartbeat =
+        version!(SHARE_GROUP_HEARTBEAT, API_VERSION_SHARE_GROUP_HEARTBEAT);
+    versions.share_fetch = version!(SHARE_FETCH, API_VERSION_SHARE_FETCH);
+    versions.share_acknowledge = version!(SHARE_ACKNOWLEDGE, API_VERSION_SHARE_ACKNOWLEDGE);
     versions.describe_share_group_offsets = version!(
         DESCRIBE_SHARE_GROUP_OFFSETS,
         API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS
@@ -586,6 +614,8 @@ pub struct ApiVersions {
     pub find_coordinator: i16,
     pub offset_commit: i16,
     pub offset_fetch: i16,
+    pub get_telemetry_subscriptions: i16,
+    pub push_telemetry: i16,
     pub delete_records: i16,
     pub offset_for_leader_epoch: i16,
     pub describe_groups: i16,
@@ -604,6 +634,7 @@ pub struct ApiVersions {
     pub renew_delegation_token: i16,
     pub expire_delegation_token: i16,
     pub delete_groups: i16,
+    pub consumer_group_heartbeat: i16,
     pub elect_leaders: i16,
     pub alter_partition_reassignments: i16,
     pub list_partition_reassignments: i16,
@@ -629,6 +660,9 @@ pub struct ApiVersions {
     pub list_config_resources: i16,
     pub describe_topic_partitions: i16,
     pub share_group_describe: i16,
+    pub share_group_heartbeat: i16,
+    pub share_fetch: i16,
+    pub share_acknowledge: i16,
     pub describe_share_group_offsets: i16,
     pub alter_share_group_offsets: i16,
     pub delete_share_group_offsets: i16,
@@ -644,6 +678,8 @@ impl Default for ApiVersions {
             find_coordinator: API_VERSION_FIND_COORDINATOR,
             offset_commit: API_VERSION_OFFSET_COMMIT,
             offset_fetch: API_VERSION_OFFSET_FETCH,
+            get_telemetry_subscriptions: API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
+            push_telemetry: API_VERSION_PUSH_TELEMETRY,
             delete_records: API_VERSION_DELETE_RECORDS,
             offset_for_leader_epoch: API_VERSION_OFFSET_FOR_LEADER_EPOCH,
             describe_groups: API_VERSION_DESCRIBE_GROUPS,
@@ -662,6 +698,7 @@ impl Default for ApiVersions {
             renew_delegation_token: API_VERSION_RENEW_DELEGATION_TOKEN,
             expire_delegation_token: API_VERSION_EXPIRE_DELEGATION_TOKEN,
             delete_groups: API_VERSION_DELETE_GROUPS,
+            consumer_group_heartbeat: API_VERSION_CONSUMER_GROUP_HEARTBEAT,
             elect_leaders: API_VERSION_ELECT_LEADERS,
             alter_partition_reassignments: API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
@@ -687,6 +724,9 @@ impl Default for ApiVersions {
             list_config_resources: API_VERSION_LIST_CONFIG_RESOURCES,
             describe_topic_partitions: API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
             share_group_describe: API_VERSION_SHARE_GROUP_DESCRIBE,
+            share_group_heartbeat: API_VERSION_SHARE_GROUP_HEARTBEAT,
+            share_fetch: API_VERSION_SHARE_FETCH,
+            share_acknowledge: API_VERSION_SHARE_ACKNOWLEDGE,
             describe_share_group_offsets: API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
             alter_share_group_offsets: API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
             delete_share_group_offsets: API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
@@ -817,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn api_versions_default_has_expected_fields() {
+    fn api_versions_default_has_expected_core_fields() {
         let v = ApiVersions::default();
         assert_eq!(v.produce, API_VERSION_PRODUCE);
         assert_eq!(v.fetch, API_VERSION_FETCH);
@@ -826,11 +866,25 @@ mod tests {
         assert_eq!(v.find_coordinator, API_VERSION_FIND_COORDINATOR);
         assert_eq!(v.offset_commit, API_VERSION_OFFSET_COMMIT);
         assert_eq!(v.offset_fetch, API_VERSION_OFFSET_FETCH);
+        assert_eq!(
+            v.get_telemetry_subscriptions,
+            API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS
+        );
+        assert_eq!(v.push_telemetry, API_VERSION_PUSH_TELEMETRY);
         assert_eq!(v.delete_records, API_VERSION_DELETE_RECORDS);
         assert_eq!(
             v.offset_for_leader_epoch,
             API_VERSION_OFFSET_FOR_LEADER_EPOCH
         );
+        assert_eq!(
+            v.consumer_group_heartbeat,
+            API_VERSION_CONSUMER_GROUP_HEARTBEAT
+        );
+    }
+
+    #[test]
+    fn api_versions_default_has_expected_admin_fields() {
+        let v = ApiVersions::default();
         assert_eq!(v.describe_groups, API_VERSION_DESCRIBE_GROUPS);
         assert_eq!(v.list_groups, API_VERSION_LIST_GROUPS);
         assert_eq!(v.describe_acls, API_VERSION_DESCRIBE_ACLS);
@@ -905,6 +959,9 @@ mod tests {
             API_VERSION_DESCRIBE_TOPIC_PARTITIONS
         );
         assert_eq!(v.share_group_describe, API_VERSION_SHARE_GROUP_DESCRIBE);
+        assert_eq!(v.share_group_heartbeat, API_VERSION_SHARE_GROUP_HEARTBEAT);
+        assert_eq!(v.share_fetch, API_VERSION_SHARE_FETCH);
+        assert_eq!(v.share_acknowledge, API_VERSION_SHARE_ACKNOWLEDGE);
         assert_eq!(
             v.describe_share_group_offsets,
             API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS

@@ -129,6 +129,23 @@ pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, 
 pub use crate::protocol::delete_topics::{DeleteTopicResult, DeleteTopicsResponseData};
 #[cfg(feature = "producer_timestamp")]
 pub use crate::protocol::produce::ProducerTimestamp;
+pub use crate::protocol::share_consumer::{
+    ConsumerGroupHeartbeatOptions, ConsumerGroupHeartbeatResponseData, ForgottenShareFetchTopic,
+    HeartbeatAssignment, HeartbeatTopicPartitions, SHARE_ACK_TYPE_ACCEPT, SHARE_ACK_TYPE_GAP,
+    SHARE_ACK_TYPE_REJECT, SHARE_ACK_TYPE_RELEASE, ShareAcknowledgeOptions,
+    ShareAcknowledgePartition, ShareAcknowledgePartitionResponse, ShareAcknowledgeResponseData,
+    ShareAcknowledgeTopic, ShareAcknowledgeTopicResponse, ShareAcknowledgeTopicResponseData,
+    ShareAcknowledgementBatch, ShareAcquiredRecords, ShareAssignment, ShareFetchOptions,
+    ShareFetchPartition, ShareFetchPartitionResponse, ShareFetchResponseData, ShareFetchTopic,
+    ShareFetchTopicResponse, ShareGroupHeartbeatOptions, ShareGroupHeartbeatResponseData,
+    ShareHeartbeatResponseData, ShareLeader, ShareNodeEndpoint, ShareTopicPartitions,
+};
+pub use crate::protocol::telemetry::{
+    GetTelemetrySubscriptionsOptions, GetTelemetrySubscriptionsResponseData, PushTelemetryOptions,
+    PushTelemetryResponseData, TELEMETRY_COMPRESSION_GZIP, TELEMETRY_COMPRESSION_LZ4,
+    TELEMETRY_COMPRESSION_NONE, TELEMETRY_COMPRESSION_SNAPPY, TELEMETRY_COMPRESSION_ZSTD,
+    TelemetrySubscriptionsResponseData,
+};
 pub use crate::utils::PartitionOffset;
 use crate::utils::TimestampedPartitionOffset;
 use std::collections::hash_map::HashMap;
@@ -727,6 +744,52 @@ impl KafkaClient {
         metadata_ops::fetch_offsets_kp(self, topics, offset)
     }
 
+    // -- admin request helper --
+
+    /// Generic helper for admin API requests that iterate over configured brokers.
+    ///
+    /// Builds a request via `build`, sends it to each broker in order, and
+    /// converts the first successful response via `convert`. Returns the last
+    /// error if all brokers fail.
+    fn try_admin_request<Req, Resp, T, FBuild, FConvert>(
+        &mut self,
+        operation_name: &'static str,
+        api_version: i16,
+        build: FBuild,
+        convert: FConvert,
+    ) -> Result<T>
+    where
+        Req: kafka_protocol::protocol::Encodable + kafka_protocol::protocol::HeaderVersion,
+        Resp: kafka_protocol::protocol::Decodable + kafka_protocol::protocol::HeaderVersion,
+        FBuild: Fn(i32, &str) -> (kafka_protocol::messages::RequestHeader, Req),
+        FConvert: Fn(Resp) -> T,
+    {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, operation_name));
+                    continue;
+                }
+            };
+
+            let (header, request) = build(correlation_id, &self.config.client_id);
+            match transport::kp_send_request(conn, &header, &request, api_version)
+                .and_then(|()| transport::kp_get_response::<Resp>(conn, api_version))
+            {
+                Ok(resp) => return Ok(convert(resp)),
+                Err(e) => last_err = Some(e.with_broker_context(&host, operation_name)),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     // -- topic administration --
 
     /// Creates one or more topics.
@@ -857,6 +920,147 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Fetches broker-side client telemetry subscription settings.
+    ///
+    /// The returned subscription ID, compression choices, interval, and metric
+    /// filters are intended to drive subsequent `push_telemetry` calls.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn get_telemetry_subscriptions(
+        &mut self,
+        client_instance_id: uuid::Uuid,
+    ) -> Result<TelemetrySubscriptionsResponseData> {
+        self.try_admin_request(
+            "GetTelemetrySubscriptions",
+            protocol::API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
+            |correlation_id, client_id| {
+                protocol::telemetry::build_get_telemetry_subscriptions_request(
+                    correlation_id,
+                    client_id,
+                    GetTelemetrySubscriptionsOptions::for_client_instance(client_instance_id),
+                )
+            },
+            protocol::telemetry::convert_get_telemetry_subscriptions_response,
+        )
+    }
+
+    /// Pushes an encoded client telemetry payload to a broker.
+    ///
+    /// This low-level API does not encode metrics itself; callers should pass a
+    /// payload that matches the broker's telemetry subscription requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn push_telemetry(
+        &mut self,
+        options: &PushTelemetryOptions,
+    ) -> Result<PushTelemetryResponseData> {
+        self.try_admin_request(
+            "PushTelemetry",
+            protocol::API_VERSION_PUSH_TELEMETRY,
+            |correlation_id, client_id| {
+                protocol::telemetry::build_push_telemetry_request(
+                    correlation_id,
+                    client_id,
+                    options,
+                )
+            },
+            protocol::telemetry::convert_push_telemetry_response,
+        )
+    }
+
+    /// Sends a low-level modern consumer-group heartbeat.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn consumer_group_heartbeat(
+        &mut self,
+        options: &ConsumerGroupHeartbeatOptions,
+    ) -> Result<ConsumerGroupHeartbeatResponseData> {
+        self.try_admin_request(
+            "ConsumerGroupHeartbeat",
+            protocol::API_VERSION_CONSUMER_GROUP_HEARTBEAT,
+            |correlation_id, client_id| {
+                protocol::share_consumer::build_consumer_group_heartbeat_request(
+                    correlation_id,
+                    client_id,
+                    options,
+                )
+            },
+            protocol::share_consumer::convert_consumer_group_heartbeat_response,
+        )
+    }
+
+    /// Sends a low-level share-group heartbeat.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn share_group_heartbeat(
+        &mut self,
+        options: &ShareGroupHeartbeatOptions,
+    ) -> Result<ShareGroupHeartbeatResponseData> {
+        self.try_admin_request(
+            "ShareGroupHeartbeat",
+            protocol::API_VERSION_SHARE_GROUP_HEARTBEAT,
+            |correlation_id, client_id| {
+                protocol::share_consumer::build_share_group_heartbeat_request(
+                    correlation_id,
+                    client_id,
+                    options,
+                )
+            },
+            protocol::share_consumer::convert_share_group_heartbeat_response,
+        )
+    }
+
+    /// Sends a low-level share fetch request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn share_fetch(&mut self, options: &ShareFetchOptions) -> Result<ShareFetchResponseData> {
+        self.try_admin_request(
+            "ShareFetch",
+            protocol::API_VERSION_SHARE_FETCH,
+            |correlation_id, client_id| {
+                protocol::share_consumer::build_share_fetch_request(
+                    correlation_id,
+                    client_id,
+                    options,
+                )
+            },
+            protocol::share_consumer::convert_share_fetch_response,
+        )
+    }
+
+    /// Sends a low-level share acknowledgement request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn share_acknowledge(
+        &mut self,
+        options: &ShareAcknowledgeOptions,
+    ) -> Result<ShareAcknowledgeResponseData> {
+        self.try_admin_request(
+            "ShareAcknowledge",
+            protocol::API_VERSION_SHARE_ACKNOWLEDGE,
+            |correlation_id, client_id| {
+                protocol::share_consumer::build_share_acknowledge_request(
+                    correlation_id,
+                    client_id,
+                    options,
+                )
+            },
+            protocol::share_consumer::convert_share_acknowledge_response,
+        )
+    }
+
     /// Describes the Kafka cluster, including cluster ID, controller ID, and brokers.
     ///
     /// The request is attempted against configured brokers until one succeeds.
@@ -878,46 +1082,19 @@ impl KafkaClient {
         include_authorized_operations: bool,
         include_fenced_brokers: bool,
     ) -> Result<DescribeClusterResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeCluster"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_cluster_request(
-                correlation_id,
-                &self.config.client_id,
-                include_authorized_operations,
-                include_fenced_brokers,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_CLUSTER,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeClusterResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_CLUSTER,
+        self.try_admin_request(
+            "DescribeCluster",
+            protocol::API_VERSION_DESCRIBE_CLUSTER,
+            |cid, cid_str| {
+                protocol::admin::build_describe_cluster_request(
+                    cid,
+                    cid_str,
+                    include_authorized_operations,
+                    include_fenced_brokers,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_cluster_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeCluster")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_describe_cluster_response,
+        )
     }
 
     /// Describes ACLs visible to the contacted broker.
@@ -940,45 +1117,12 @@ impl KafkaClient {
         &mut self,
         filter: &DescribeAclsFilter,
     ) -> Result<DescribeAclsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeAcls"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_acls_request(
-                correlation_id,
-                &self.config.client_id,
-                filter,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_ACLS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeAclsResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_ACLS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_acls_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeAcls")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeAcls",
+            protocol::API_VERSION_DESCRIBE_ACLS,
+            |cid, cid_str| protocol::admin::build_describe_acls_request(cid, cid_str, filter),
+            protocol::admin::convert_describe_acls_response,
+        )
     }
 
     /// Creates ACL bindings on the contacted broker.
@@ -987,45 +1131,12 @@ impl KafkaClient {
     ///
     /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
     pub fn create_acls(&mut self, bindings: &[AclBinding]) -> Result<CreateAclsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "CreateAcls"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_create_acls_request(
-                correlation_id,
-                &self.config.client_id,
-                bindings,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_CREATE_ACLS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::CreateAclsResponse>(
-                    conn,
-                    protocol::API_VERSION_CREATE_ACLS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_create_acls_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "CreateAcls")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "CreateAcls",
+            protocol::API_VERSION_CREATE_ACLS,
+            |cid, cid_str| protocol::admin::build_create_acls_request(cid, cid_str, bindings),
+            protocol::admin::convert_create_acls_response,
+        )
     }
 
     /// Deletes ACLs matching the supplied filters.
@@ -1039,45 +1150,12 @@ impl KafkaClient {
         &mut self,
         filters: &[DescribeAclsFilter],
     ) -> Result<DeleteAclsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DeleteAcls"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_delete_acls_request(
-                correlation_id,
-                &self.config.client_id,
-                filters,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DELETE_ACLS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DeleteAclsResponse>(
-                    conn,
-                    protocol::API_VERSION_DELETE_ACLS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_delete_acls_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteAcls")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DeleteAcls",
+            protocol::API_VERSION_DELETE_ACLS,
+            |cid, cid_str| protocol::admin::build_delete_acls_request(cid, cid_str, filters),
+            protocol::admin::convert_delete_acls_response,
+        )
     }
 
     /// Describes Kafka topic, broker, or broker logger configs.
@@ -1105,47 +1183,20 @@ impl KafkaClient {
         include_synonyms: bool,
         include_documentation: bool,
     ) -> Result<DescribeConfigsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeConfigs"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_configs_request(
-                correlation_id,
-                &self.config.client_id,
-                resources,
-                include_synonyms,
-                include_documentation,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_CONFIGS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeConfigsResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_CONFIGS,
+        self.try_admin_request(
+            "DescribeConfigs",
+            protocol::API_VERSION_DESCRIBE_CONFIGS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_configs_request(
+                    cid,
+                    cid_str,
+                    resources,
+                    include_synonyms,
+                    include_documentation,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_configs_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeConfigs")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_describe_configs_response,
+        )
     }
 
     /// Applies incremental config changes to Kafka topic, broker, or broker logger resources.
@@ -1159,46 +1210,14 @@ impl KafkaClient {
         &mut self,
         options: &IncrementalAlterConfigsOptions,
     ) -> Result<IncrementalAlterConfigsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "IncrementalAlterConfigs"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_incremental_alter_configs_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::IncrementalAlterConfigsResponse,
-                >(conn, protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS)
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_incremental_alter_configs_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "IncrementalAlterConfigs")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "IncrementalAlterConfigs",
+            protocol::API_VERSION_INCREMENTAL_ALTER_CONFIGS,
+            |cid, cid_str| {
+                protocol::admin::build_incremental_alter_configs_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_incremental_alter_configs_response,
+        )
     }
 
     /// Alters broker or topic configs with Kafka's legacy whole-resource `AlterConfigs` API.
@@ -1216,43 +1235,12 @@ impl KafkaClient {
         &mut self,
         options: &AlterConfigsOptions,
     ) -> Result<AlterConfigsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterConfigs"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_alter_configs_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ALTER_CONFIGS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::AlterConfigsResponse>(
-                    conn,
-                    protocol::API_VERSION_ALTER_CONFIGS,
-                )
-            }) {
-                Ok(resp) => return Ok(protocol::admin::convert_alter_configs_response(resp)),
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterConfigs")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AlterConfigs",
+            protocol::API_VERSION_ALTER_CONFIGS,
+            |cid, cid_str| protocol::admin::build_alter_configs_request(cid, cid_str, options),
+            protocol::admin::convert_alter_configs_response,
+        )
     }
 
     /// Moves selected replicas to broker log directories.
@@ -1264,47 +1252,14 @@ impl KafkaClient {
         &mut self,
         dirs: &[AlterReplicaLogDir],
     ) -> Result<AlterReplicaLogDirsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterReplicaLogDirs"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_alter_replica_log_dirs_request(
-                correlation_id,
-                &self.config.client_id,
-                dirs,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ALTER_REPLICA_LOG_DIRS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::AlterReplicaLogDirsResponse>(
-                    conn,
-                    protocol::API_VERSION_ALTER_REPLICA_LOG_DIRS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_alter_replica_log_dirs_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterReplicaLogDirs")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AlterReplicaLogDirs",
+            protocol::API_VERSION_ALTER_REPLICA_LOG_DIRS,
+            |cid, cid_str| {
+                protocol::admin::build_alter_replica_log_dirs_request(cid, cid_str, dirs)
+            },
+            protocol::admin::convert_alter_replica_log_dirs_response,
+        )
     }
 
     /// Describes all delegation tokens visible to the contacted broker.
@@ -1332,46 +1287,14 @@ impl KafkaClient {
         &mut self,
         owners: Option<&[KafkaPrincipal]>,
     ) -> Result<DescribeDelegationTokenResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeDelegationToken"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_delegation_token_request(
-                correlation_id,
-                &self.config.client_id,
-                owners,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DescribeDelegationTokenResponse,
-                >(conn, protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN)
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_delegation_token_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeDelegationToken")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeDelegationToken",
+            protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+            |cid, cid_str| {
+                protocol::admin::build_describe_delegation_token_request(cid, cid_str, owners)
+            },
+            protocol::admin::convert_describe_delegation_token_response,
+        )
     }
 
     /// Creates a Kafka delegation token.
@@ -1387,47 +1310,14 @@ impl KafkaClient {
         &mut self,
         options: &CreateDelegationTokenOptions,
     ) -> Result<CreateDelegationTokenResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "CreateDelegationToken"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_create_delegation_token_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_CREATE_DELEGATION_TOKEN,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<
-                        kafka_protocol::messages::CreateDelegationTokenResponse,
-                    >(
-                        conn,
-                        protocol::API_VERSION_CREATE_DELEGATION_TOKEN,
-                    )
-                }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_create_delegation_token_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "CreateDelegationToken")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "CreateDelegationToken",
+            protocol::API_VERSION_CREATE_DELEGATION_TOKEN,
+            |cid, cid_str| {
+                protocol::admin::build_create_delegation_token_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_create_delegation_token_response,
+        )
     }
 
     /// Renews a Kafka delegation token by HMAC.
@@ -1442,46 +1332,20 @@ impl KafkaClient {
         renew_period: Duration,
     ) -> Result<RenewDelegationTokenResponseData> {
         let renew_period_ms = protocol::to_millis_i64(renew_period)?;
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "RenewDelegationToken"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_renew_delegation_token_request(
-                correlation_id,
-                &self.config.client_id,
-                bytes::Bytes::copy_from_slice(hmac),
-                renew_period_ms,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_RENEW_DELEGATION_TOKEN,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<kafka_protocol::messages::RenewDelegationTokenResponse>(
-                        conn,
-                        protocol::API_VERSION_RENEW_DELEGATION_TOKEN,
-                    )
-                }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_renew_delegation_token_response(&resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "RenewDelegationToken")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        let hmac_bytes = bytes::Bytes::copy_from_slice(hmac);
+        self.try_admin_request(
+            "RenewDelegationToken",
+            protocol::API_VERSION_RENEW_DELEGATION_TOKEN,
+            |cid, cid_str| {
+                protocol::admin::build_renew_delegation_token_request(
+                    cid,
+                    cid_str,
+                    hmac_bytes.clone(),
+                    renew_period_ms,
+                )
+            },
+            |resp| protocol::admin::convert_renew_delegation_token_response(&resp),
+        )
     }
 
     /// Expires a Kafka delegation token by HMAC.
@@ -1496,48 +1360,20 @@ impl KafkaClient {
         expiry_period: Duration,
     ) -> Result<ExpireDelegationTokenResponseData> {
         let expiry_period_ms = protocol::to_millis_i64(expiry_period)?;
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ExpireDelegationToken"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_expire_delegation_token_request(
-                correlation_id,
-                &self.config.client_id,
-                bytes::Bytes::copy_from_slice(hmac),
-                expiry_period_ms,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_EXPIRE_DELEGATION_TOKEN,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<
-                        kafka_protocol::messages::ExpireDelegationTokenResponse,
-                    >(
-                        conn,
-                        protocol::API_VERSION_EXPIRE_DELEGATION_TOKEN,
-                    )
-                }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_expire_delegation_token_response(&resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ExpireDelegationToken")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        let hmac_bytes = bytes::Bytes::copy_from_slice(hmac);
+        self.try_admin_request(
+            "ExpireDelegationToken",
+            protocol::API_VERSION_EXPIRE_DELEGATION_TOKEN,
+            |cid, cid_str| {
+                protocol::admin::build_expire_delegation_token_request(
+                    cid,
+                    cid_str,
+                    hmac_bytes.clone(),
+                    expiry_period_ms,
+                )
+            },
+            |resp| protocol::admin::convert_expire_delegation_token_response(&resp),
+        )
     }
 
     /// Describes all broker log directories visible to the contacted broker.
@@ -1568,45 +1404,12 @@ impl KafkaClient {
         &mut self,
         topics: Option<&[TopicPartitionFilter]>,
     ) -> Result<DescribeLogDirsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeLogDirs"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_log_dirs_request(
-                correlation_id,
-                &self.config.client_id,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_LOG_DIRS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeLogDirsResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_LOG_DIRS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_log_dirs_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeLogDirs")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeLogDirs",
+            protocol::API_VERSION_DESCRIBE_LOG_DIRS,
+            |cid, cid_str| protocol::admin::build_describe_log_dirs_request(cid, cid_str, topics),
+            protocol::admin::convert_describe_log_dirs_response,
+        )
     }
 
     /// Deletes records before the supplied offsets for selected topic partitions.
@@ -1624,46 +1427,14 @@ impl KafkaClient {
         timeout: Duration,
     ) -> Result<DeleteRecordsResponseData> {
         let timeout_ms = protocol::to_millis_i32(timeout)?;
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DeleteRecords"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_delete_records_request(
-                correlation_id,
-                &self.config.client_id,
-                topics,
-                timeout_ms,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DELETE_RECORDS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DeleteRecordsResponse>(
-                    conn,
-                    protocol::API_VERSION_DELETE_RECORDS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_delete_records_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteRecords")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DeleteRecords",
+            protocol::API_VERSION_DELETE_RECORDS,
+            |cid, cid_str| {
+                protocol::admin::build_delete_records_request(cid, cid_str, topics, timeout_ms)
+            },
+            protocol::admin::convert_delete_records_response,
+        )
     }
 
     /// Lists all ongoing partition reassignments visible to the contacted broker.
@@ -1699,49 +1470,16 @@ impl KafkaClient {
         timeout: Duration,
     ) -> Result<ListPartitionReassignmentsResponseData> {
         let timeout_ms = protocol::to_millis_i32(timeout)?;
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ListPartitionReassignments"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_list_partition_reassignments_request(
-                correlation_id,
-                &self.config.client_id,
-                topics,
-                timeout_ms,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::ListPartitionReassignmentsResponse,
-                >(conn, protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS)
-            }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_list_partition_reassignments_response(resp),
-                    );
-                }
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ListPartitionReassignments"));
-                }
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "ListPartitionReassignments",
+            protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            |cid, cid_str| {
+                protocol::admin::build_list_partition_reassignments_request(
+                    cid, cid_str, topics, timeout_ms,
+                )
+            },
+            protocol::admin::convert_list_partition_reassignments_response,
+        )
     }
 
     /// Alters or cancels partition reassignments.
@@ -1756,48 +1494,14 @@ impl KafkaClient {
         &mut self,
         options: &AlterPartitionReassignmentsOptions,
     ) -> Result<AlterPartitionReassignmentsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterPartitionReassignments"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_alter_partition_reassignments_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::AlterPartitionReassignmentsResponse,
-                >(conn, protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS)
-            }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_alter_partition_reassignments_response(resp),
-                    );
-                }
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterPartitionReassignments"));
-                }
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AlterPartitionReassignments",
+            protocol::API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+            |cid, cid_str| {
+                protocol::admin::build_alter_partition_reassignments_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_alter_partition_reassignments_response,
+        )
     }
 
     /// Describes `KRaft` quorum state for selected topic partitions.
@@ -1809,45 +1513,12 @@ impl KafkaClient {
         &mut self,
         topics: &[TopicPartitionFilter],
     ) -> Result<DescribeQuorumResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeQuorum"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_quorum_request(
-                correlation_id,
-                &self.config.client_id,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_QUORUM,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeQuorumResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_QUORUM,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_quorum_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeQuorum")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeQuorum",
+            protocol::API_VERSION_DESCRIBE_QUORUM,
+            |cid, cid_str| protocol::admin::build_describe_quorum_request(cid, cid_str, topics),
+            protocol::admin::convert_describe_quorum_response,
+        )
     }
 
     /// Updates finalized `KRaft` feature levels.
@@ -1863,46 +1534,19 @@ impl KafkaClient {
         feature_updates: &[FeatureUpdate],
         validate_only: bool,
     ) -> Result<UpdateFeaturesResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "UpdateFeatures"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_update_features_request(
-                correlation_id,
-                &self.config.client_id,
-                feature_updates,
-                validate_only,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_UPDATE_FEATURES,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::UpdateFeaturesResponse>(
-                    conn,
-                    protocol::API_VERSION_UPDATE_FEATURES,
+        self.try_admin_request(
+            "UpdateFeatures",
+            protocol::API_VERSION_UPDATE_FEATURES,
+            |cid, cid_str| {
+                protocol::admin::build_update_features_request(
+                    cid,
+                    cid_str,
+                    feature_updates,
+                    validate_only,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_update_features_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "UpdateFeatures")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_update_features_response,
+        )
     }
 
     /// Unregisters a broker from the `KRaft` cluster metadata.
@@ -1914,45 +1558,14 @@ impl KafkaClient {
     ///
     /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
     pub fn unregister_broker(&mut self, broker_id: i32) -> Result<UnregisterBrokerResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "UnregisterBroker"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_unregister_broker_request(
-                correlation_id,
-                &self.config.client_id,
-                broker_id,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_UNREGISTER_BROKER,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::UnregisterBrokerResponse>(
-                    conn,
-                    protocol::API_VERSION_UNREGISTER_BROKER,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_unregister_broker_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "UnregisterBroker")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "UnregisterBroker",
+            protocol::API_VERSION_UNREGISTER_BROKER,
+            |cid, cid_str| {
+                protocol::admin::build_unregister_broker_request(cid, cid_str, broker_id)
+            },
+            protocol::admin::convert_unregister_broker_response,
+        )
     }
 
     /// Assigns topic replicas to broker log directory IDs.
@@ -1967,44 +1580,14 @@ impl KafkaClient {
         &mut self,
         options: &AssignReplicasToDirsOptions,
     ) -> Result<AssignReplicasToDirsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AssignReplicasToDirs"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_assign_replicas_to_dirs_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::AssignReplicasToDirsResponse,
-                >(conn, protocol::API_VERSION_ASSIGN_REPLICAS_TO_DIRS)
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_assign_replicas_to_dirs_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AssignReplicasToDirs")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AssignReplicasToDirs",
+            protocol::API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
+            |cid, cid_str| {
+                protocol::admin::build_assign_replicas_to_dirs_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_assign_replicas_to_dirs_response,
+        )
     }
 
     /// Adds a voter to the `KRaft` controller quorum.
@@ -2019,43 +1602,12 @@ impl KafkaClient {
         &mut self,
         options: &AddRaftVoterOptions,
     ) -> Result<RaftVoterResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AddRaftVoter"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_add_raft_voter_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ADD_RAFT_VOTER,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::AddRaftVoterResponse>(
-                    conn,
-                    protocol::API_VERSION_ADD_RAFT_VOTER,
-                )
-            }) {
-                Ok(resp) => return Ok(protocol::admin::convert_add_raft_voter_response(resp)),
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AddRaftVoter")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AddRaftVoter",
+            protocol::API_VERSION_ADD_RAFT_VOTER,
+            |cid, cid_str| protocol::admin::build_add_raft_voter_request(cid, cid_str, options),
+            protocol::admin::convert_add_raft_voter_response,
+        )
     }
 
     /// Removes a voter from the `KRaft` controller quorum.
@@ -2067,43 +1619,12 @@ impl KafkaClient {
         &mut self,
         options: &RemoveRaftVoterOptions,
     ) -> Result<RaftVoterResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "RemoveRaftVoter"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_remove_raft_voter_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_REMOVE_RAFT_VOTER,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::RemoveRaftVoterResponse>(
-                    conn,
-                    protocol::API_VERSION_REMOVE_RAFT_VOTER,
-                )
-            }) {
-                Ok(resp) => return Ok(protocol::admin::convert_remove_raft_voter_response(resp)),
-                Err(e) => last_err = Some(e.with_broker_context(&host, "RemoveRaftVoter")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "RemoveRaftVoter",
+            protocol::API_VERSION_REMOVE_RAFT_VOTER,
+            |cid, cid_str| protocol::admin::build_remove_raft_voter_request(cid, cid_str, options),
+            protocol::admin::convert_remove_raft_voter_response,
+        )
     }
 
     /// Updates a voter in the `KRaft` controller quorum.
@@ -2115,43 +1636,12 @@ impl KafkaClient {
         &mut self,
         options: &UpdateRaftVoterOptions,
     ) -> Result<UpdateRaftVoterResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "UpdateRaftVoter"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_update_raft_voter_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_UPDATE_RAFT_VOTER,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::UpdateRaftVoterResponse>(
-                    conn,
-                    protocol::API_VERSION_UPDATE_RAFT_VOTER,
-                )
-            }) {
-                Ok(resp) => return Ok(protocol::admin::convert_update_raft_voter_response(resp)),
-                Err(e) => last_err = Some(e.with_broker_context(&host, "UpdateRaftVoter")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "UpdateRaftVoter",
+            protocol::API_VERSION_UPDATE_RAFT_VOTER,
+            |cid, cid_str| protocol::admin::build_update_raft_voter_request(cid, cid_str, options),
+            protocol::admin::convert_update_raft_voter_response,
+        )
     }
 
     /// Elects leaders using the supplied Kafka election type and partition scope.
@@ -2166,45 +1656,12 @@ impl KafkaClient {
         &mut self,
         options: &ElectLeadersOptions,
     ) -> Result<ElectLeadersResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ElectLeaders"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_elect_leaders_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ELECT_LEADERS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::ElectLeadersResponse>(
-                    conn,
-                    protocol::API_VERSION_ELECT_LEADERS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_elect_leaders_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ElectLeaders")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "ElectLeaders",
+            protocol::API_VERSION_ELECT_LEADERS,
+            |cid, cid_str| protocol::admin::build_elect_leaders_request(cid, cid_str, options),
+            protocol::admin::convert_elect_leaders_response,
+        )
     }
 
     /// Elects preferred leaders for selected topic partitions.
@@ -2257,47 +1714,14 @@ impl KafkaClient {
         &mut self,
         resource_types: &[i8],
     ) -> Result<ListConfigResourcesResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ListConfigResources"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_list_config_resources_request(
-                correlation_id,
-                &self.config.client_id,
-                resource_types,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_LIST_CONFIG_RESOURCES,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::ListConfigResourcesResponse>(
-                    conn,
-                    protocol::API_VERSION_LIST_CONFIG_RESOURCES,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_list_config_resources_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ListConfigResources")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "ListConfigResources",
+            protocol::API_VERSION_LIST_CONFIG_RESOURCES,
+            |cid, cid_str| {
+                protocol::admin::build_list_config_resources_request(cid, cid_str, resource_types)
+            },
+            protocol::admin::convert_list_config_resources_response,
+        )
     }
 
     /// Expands partition counts for one or more topics.
@@ -2322,45 +1746,12 @@ impl KafkaClient {
         &mut self,
         options: &CreatePartitionsOptions,
     ) -> Result<CreatePartitionsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "CreatePartitions"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_create_partitions_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_CREATE_PARTITIONS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::CreatePartitionsResponse>(
-                    conn,
-                    protocol::API_VERSION_CREATE_PARTITIONS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_create_partitions_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "CreatePartitions")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "CreatePartitions",
+            protocol::API_VERSION_CREATE_PARTITIONS,
+            |cid, cid_str| protocol::admin::build_create_partitions_request(cid, cid_str, options),
+            protocol::admin::convert_create_partitions_response,
+        )
     }
 
     /// Describes topic and partition metadata for one response page.
@@ -2391,46 +1782,14 @@ impl KafkaClient {
         &mut self,
         options: &DescribeTopicPartitionsOptions,
     ) -> Result<DescribeTopicPartitionsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeTopicPartitions"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_topic_partitions_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DescribeTopicPartitionsResponse,
-                >(conn, protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS)
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_topic_partitions_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTopicPartitions")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeTopicPartitions",
+            protocol::API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_topic_partitions_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_describe_topic_partitions_response,
+        )
     }
 
     /// Describes all client quota entities visible to the contacted broker.
@@ -2451,49 +1810,14 @@ impl KafkaClient {
         &mut self,
         options: &DescribeClientQuotasOptions,
     ) -> Result<DescribeClientQuotasResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeClientQuotas"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_client_quotas_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<
-                        kafka_protocol::messages::DescribeClientQuotasResponse,
-                    >(
-                        conn,
-                        protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
-                    )
-                }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_client_quotas_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeClientQuotas")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeClientQuotas",
+            protocol::API_VERSION_DESCRIBE_CLIENT_QUOTAS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_client_quotas_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_describe_client_quotas_response,
+        )
     }
 
     /// Applies client quota changes for one or more quota entities.
@@ -2505,45 +1829,14 @@ impl KafkaClient {
         &mut self,
         options: &AlterClientQuotasOptions,
     ) -> Result<AlterClientQuotasResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterClientQuotas"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_alter_client_quotas_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::AlterClientQuotasResponse>(
-                    conn,
-                    protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_alter_client_quotas_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterClientQuotas")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AlterClientQuotas",
+            protocol::API_VERSION_ALTER_CLIENT_QUOTAS,
+            |cid, cid_str| {
+                protocol::admin::build_alter_client_quotas_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_alter_client_quotas_response,
+        )
     }
 
     /// Describes SCRAM credential metadata for all visible users.
@@ -2573,48 +1866,14 @@ impl KafkaClient {
         &mut self,
         users: Option<&[&str]>,
     ) -> Result<DescribeUserScramCredentialsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeUserScramCredentials"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_user_scram_credentials_request(
-                correlation_id,
-                &self.config.client_id,
-                users,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DescribeUserScramCredentialsResponse,
-                >(conn, protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS)
-            }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_describe_user_scram_credentials_response(resp),
-                    );
-                }
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeUserScramCredentials"));
-                }
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeUserScramCredentials",
+            protocol::API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_user_scram_credentials_request(cid, cid_str, users)
+            },
+            protocol::admin::convert_describe_user_scram_credentials_response,
+        )
     }
 
     /// Alters SCRAM credentials for Kafka users.
@@ -2630,48 +1889,14 @@ impl KafkaClient {
         &mut self,
         options: &AlterUserScramCredentialsOptions,
     ) -> Result<AlterUserScramCredentialsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterUserScramCredentials"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_alter_user_scram_credentials_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::AlterUserScramCredentialsResponse,
-                >(conn, protocol::API_VERSION_ALTER_USER_SCRAM_CREDENTIALS)
-            }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_alter_user_scram_credentials_response(resp),
-                    );
-                }
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterUserScramCredentials"));
-                }
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AlterUserScramCredentials",
+            protocol::API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+            |cid, cid_str| {
+                protocol::admin::build_alter_user_scram_credentials_request(cid, cid_str, options)
+            },
+            protocol::admin::convert_alter_user_scram_credentials_response,
+        )
     }
 
     /// Describes active producers for selected topic partitions.
@@ -2683,45 +1908,12 @@ impl KafkaClient {
         &mut self,
         topics: &[TopicPartitionFilter],
     ) -> Result<DescribeProducersResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeProducers"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_producers_request(
-                correlation_id,
-                &self.config.client_id,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_PRODUCERS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeProducersResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_PRODUCERS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_producers_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeProducers")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeProducers",
+            protocol::API_VERSION_DESCRIBE_PRODUCERS,
+            |cid, cid_str| protocol::admin::build_describe_producers_request(cid, cid_str, topics),
+            protocol::admin::convert_describe_producers_response,
+        )
     }
 
     /// Looks up end offsets for specific topic-partition leader epochs.
@@ -2733,46 +1925,14 @@ impl KafkaClient {
         &mut self,
         topics: &[LeaderEpochTopicRequest],
     ) -> Result<OffsetForLeaderEpochResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "OffsetForLeaderEpoch"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_offset_for_leader_epoch_request(
-                correlation_id,
-                &self.config.client_id,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<
-                        kafka_protocol::messages::OffsetForLeaderEpochResponse,
-                    >(conn, protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH)
-                }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_offset_for_leader_epoch_response(resp),
-                    );
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "OffsetForLeaderEpoch")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "OffsetForLeaderEpoch",
+            protocol::API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+            |cid, cid_str| {
+                protocol::admin::build_offset_for_leader_epoch_request(cid, cid_str, topics)
+            },
+            protocol::admin::convert_offset_for_leader_epoch_response,
+        )
     }
 
     /// Lists transactions visible to the contacted broker.
@@ -2793,45 +1953,12 @@ impl KafkaClient {
         &mut self,
         options: &ListTransactionsOptions,
     ) -> Result<ListTransactionsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ListTransactions"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_list_transactions_request(
-                correlation_id,
-                &self.config.client_id,
-                options,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_LIST_TRANSACTIONS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::ListTransactionsResponse>(
-                    conn,
-                    protocol::API_VERSION_LIST_TRANSACTIONS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_list_transactions_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ListTransactions")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "ListTransactions",
+            protocol::API_VERSION_LIST_TRANSACTIONS,
+            |cid, cid_str| protocol::admin::build_list_transactions_request(cid, cid_str, options),
+            protocol::admin::convert_list_transactions_response,
+        )
     }
 
     /// Describes detailed transaction state for the supplied transactional IDs.
@@ -2843,49 +1970,18 @@ impl KafkaClient {
         &mut self,
         transactional_ids: &[&str],
     ) -> Result<DescribeTransactionsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeTransactions"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_transactions_request(
-                correlation_id,
-                &self.config.client_id,
-                transactional_ids,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<
-                        kafka_protocol::messages::DescribeTransactionsResponse,
-                    >(
-                        conn,
-                        protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
-                    )
-                }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_transactions_response(
-                        resp,
-                    ));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeTransactions")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeTransactions",
+            protocol::API_VERSION_DESCRIBE_TRANSACTIONS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_transactions_request(
+                    cid,
+                    cid_str,
+                    transactional_ids,
+                )
+            },
+            protocol::admin::convert_describe_transactions_response,
+        )
     }
 
     /// Adds offsets for a consumer group to the current transaction.
@@ -2900,48 +1996,21 @@ impl KafkaClient {
         producer_epoch: i16,
         group_id: &str,
     ) -> Result<AddOffsetsToTxnResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AddOffsetsToTxn"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_add_offsets_to_txn_request(
-                correlation_id,
-                &self.config.client_id,
-                txn_id,
-                producer_id,
-                producer_epoch,
-                group_id,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ADD_OFFSETS_TO_TXN,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::AddOffsetsToTxnResponse>(
-                    conn,
-                    protocol::API_VERSION_ADD_OFFSETS_TO_TXN,
+        self.try_admin_request(
+            "AddOffsetsToTxn",
+            protocol::API_VERSION_ADD_OFFSETS_TO_TXN,
+            |cid, cid_str| {
+                protocol::admin::build_add_offsets_to_txn_request(
+                    cid,
+                    cid_str,
+                    txn_id,
+                    producer_id,
+                    producer_epoch,
+                    group_id,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_add_offsets_to_txn_response(&resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AddOffsetsToTxn")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            |resp| protocol::admin::convert_add_offsets_to_txn_response(&resp),
+        )
     }
 
     /// Commits consumer offsets as part of a transaction.
@@ -2957,49 +2026,22 @@ impl KafkaClient {
         producer_epoch: i16,
         offsets: &[TxnOffsetCommitTopicPartition],
     ) -> Result<TxnOffsetCommitResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "TxnOffsetCommit"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_txn_offset_commit_request(
-                correlation_id,
-                &self.config.client_id,
-                txn_id,
-                group_id,
-                producer_id,
-                producer_epoch,
-                offsets,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_TXN_OFFSET_COMMIT,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::TxnOffsetCommitResponse>(
-                    conn,
-                    protocol::API_VERSION_TXN_OFFSET_COMMIT,
+        self.try_admin_request(
+            "TxnOffsetCommit",
+            protocol::API_VERSION_TXN_OFFSET_COMMIT,
+            |cid, cid_str| {
+                protocol::admin::build_txn_offset_commit_request(
+                    cid,
+                    cid_str,
+                    txn_id,
+                    group_id,
+                    producer_id,
+                    producer_epoch,
+                    offsets,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_txn_offset_commit_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "TxnOffsetCommit")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_txn_offset_commit_response,
+        )
     }
 
     /// Describes modern consumer group state for the supplied group IDs.
@@ -3027,48 +2069,19 @@ impl KafkaClient {
         groups: &[&str],
         include_authorized_operations: bool,
     ) -> Result<ConsumerGroupDescribeResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ConsumerGroupDescribe"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_consumer_group_describe_request(
-                correlation_id,
-                &self.config.client_id,
-                groups,
-                include_authorized_operations,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
-            )
-                .and_then(|()| {
-                    transport::kp_get_response::<kafka_protocol::messages::ConsumerGroupDescribeResponse>(
-                        conn,
-                        protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
-                    )
-                }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_consumer_group_describe_response(resp),
-                    );
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ConsumerGroupDescribe")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "ConsumerGroupDescribe",
+            protocol::API_VERSION_CONSUMER_GROUP_DESCRIBE,
+            |cid, cid_str| {
+                protocol::admin::build_consumer_group_describe_request(
+                    cid,
+                    cid_str,
+                    groups,
+                    include_authorized_operations,
+                )
+            },
+            protocol::admin::convert_consumer_group_describe_response,
+        )
     }
 
     /// Describes Kafka share group state for the supplied group IDs.
@@ -3096,46 +2109,19 @@ impl KafkaClient {
         groups: &[&str],
         include_authorized_operations: bool,
     ) -> Result<ShareGroupDescribeResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ShareGroupDescribe"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_share_group_describe_request(
-                correlation_id,
-                &self.config.client_id,
-                groups,
-                include_authorized_operations,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::ShareGroupDescribeResponse>(
-                    conn,
-                    protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
+        self.try_admin_request(
+            "ShareGroupDescribe",
+            protocol::API_VERSION_SHARE_GROUP_DESCRIBE,
+            |cid, cid_str| {
+                protocol::admin::build_share_group_describe_request(
+                    cid,
+                    cid_str,
+                    groups,
+                    include_authorized_operations,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_share_group_describe_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ShareGroupDescribe")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_share_group_describe_response,
+        )
     }
 
     /// Describes all visible share-partition offsets for the supplied share group IDs.
@@ -3163,48 +2149,14 @@ impl KafkaClient {
         &mut self,
         groups: &[ShareGroupOffsetRequest],
     ) -> Result<DescribeShareGroupOffsetsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeShareGroupOffsets"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_share_group_offsets_request(
-                correlation_id,
-                &self.config.client_id,
-                groups,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DescribeShareGroupOffsetsResponse,
-                >(conn, protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS)
-            }) {
-                Ok(resp) => {
-                    return Ok(
-                        protocol::admin::convert_describe_share_group_offsets_response(resp),
-                    );
-                }
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeShareGroupOffsets"));
-                }
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DescribeShareGroupOffsets",
+            protocol::API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_share_group_offsets_request(cid, cid_str, groups)
+            },
+            protocol::admin::convert_describe_share_group_offsets_response,
+        )
     }
 
     /// Alters start offsets for partitions in a Kafka share group.
@@ -3217,45 +2169,16 @@ impl KafkaClient {
         group_id: &str,
         topics: &[AlterShareGroupOffsetTopic],
     ) -> Result<AlterShareGroupOffsetsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "AlterShareGroupOffsets"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_alter_share_group_offsets_request(
-                correlation_id,
-                &self.config.client_id,
-                group_id,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::AlterShareGroupOffsetsResponse,
-                >(conn, protocol::API_VERSION_ALTER_SHARE_GROUP_OFFSETS)
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_alter_share_group_offsets_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "AlterShareGroupOffsets")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "AlterShareGroupOffsets",
+            protocol::API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
+            |cid, cid_str| {
+                protocol::admin::build_alter_share_group_offsets_request(
+                    cid, cid_str, group_id, topics,
+                )
+            },
+            protocol::admin::convert_alter_share_group_offsets_response,
+        )
     }
 
     /// Deletes stored offsets for topics in a Kafka share group.
@@ -3268,45 +2191,16 @@ impl KafkaClient {
         group_id: &str,
         topics: &[DeleteShareGroupOffsetTopic],
     ) -> Result<DeleteShareGroupOffsetsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DeleteShareGroupOffsets"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_delete_share_group_offsets_request(
-                correlation_id,
-                &self.config.client_id,
-                group_id,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<
-                    kafka_protocol::messages::DeleteShareGroupOffsetsResponse,
-                >(conn, protocol::API_VERSION_DELETE_SHARE_GROUP_OFFSETS)
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_delete_share_group_offsets_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteShareGroupOffsets")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DeleteShareGroupOffsets",
+            protocol::API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
+            |cid, cid_str| {
+                protocol::admin::build_delete_share_group_offsets_request(
+                    cid, cid_str, group_id, topics,
+                )
+            },
+            protocol::admin::convert_delete_share_group_offsets_response,
+        )
     }
 
     /// Lists consumer groups known to the contacted broker.
@@ -3332,44 +2226,19 @@ impl KafkaClient {
         states_filter: &[&str],
         types_filter: &[&str],
     ) -> Result<ListGroupsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "ListGroups"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_list_groups_request(
-                correlation_id,
-                &self.config.client_id,
-                states_filter,
-                types_filter,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_LIST_GROUPS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::ListGroupsResponse>(
-                    conn,
-                    protocol::API_VERSION_LIST_GROUPS,
+        self.try_admin_request(
+            "ListGroups",
+            protocol::API_VERSION_LIST_GROUPS,
+            |cid, cid_str| {
+                protocol::admin::build_list_groups_request(
+                    cid,
+                    cid_str,
+                    states_filter,
+                    types_filter,
                 )
-            }) {
-                Ok(resp) => return Ok(protocol::admin::convert_list_groups_response(resp)),
-                Err(e) => last_err = Some(e.with_broker_context(&host, "ListGroups")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_list_groups_response,
+        )
     }
 
     /// Deletes the supplied consumer groups.
@@ -3378,45 +2247,12 @@ impl KafkaClient {
     ///
     /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
     pub fn delete_groups(&mut self, groups: &[&str]) -> Result<DeleteGroupsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DeleteGroups"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_delete_groups_request(
-                correlation_id,
-                &self.config.client_id,
-                groups,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DELETE_GROUPS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DeleteGroupsResponse>(
-                    conn,
-                    protocol::API_VERSION_DELETE_GROUPS,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_delete_groups_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DeleteGroups")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "DeleteGroups",
+            protocol::API_VERSION_DELETE_GROUPS,
+            |cid, cid_str| protocol::admin::build_delete_groups_request(cid, cid_str, groups),
+            protocol::admin::convert_delete_groups_response,
+        )
     }
 
     /// Describes the supplied consumer groups.
@@ -3440,46 +2276,19 @@ impl KafkaClient {
         groups: &[&str],
         include_authorized_operations: bool,
     ) -> Result<DescribeGroupsResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "DescribeGroups"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_describe_groups_request(
-                correlation_id,
-                &self.config.client_id,
-                groups,
-                include_authorized_operations,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_DESCRIBE_GROUPS,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::DescribeGroupsResponse>(
-                    conn,
-                    protocol::API_VERSION_DESCRIBE_GROUPS,
+        self.try_admin_request(
+            "DescribeGroups",
+            protocol::API_VERSION_DESCRIBE_GROUPS,
+            |cid, cid_str| {
+                protocol::admin::build_describe_groups_request(
+                    cid,
+                    cid_str,
+                    groups,
+                    include_authorized_operations,
                 )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_describe_groups_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeGroups")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+            },
+            protocol::admin::convert_describe_groups_response,
+        )
     }
 
     // -- fetch operations (delegated to fetch_ops.rs) --
@@ -3595,46 +2404,14 @@ impl KafkaClient {
         group: &str,
         topics: &[TopicPartitionFilter],
     ) -> Result<OffsetDeleteResponseData> {
-        let correlation_id = self.state.next_correlation_id();
-        let now = std::time::Instant::now();
-        let hosts = self.config.hosts.clone();
-        let mut last_err: Option<Error> = None;
-
-        for host in hosts {
-            let conn = match self.conn_pool.get_conn(&host, now) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    last_err = Some(e.with_broker_context(&host, "OffsetDelete"));
-                    continue;
-                }
-            };
-
-            let (header, request) = protocol::admin::build_offset_delete_request(
-                correlation_id,
-                &self.config.client_id,
-                group,
-                topics,
-            );
-            match transport::kp_send_request(
-                conn,
-                &header,
-                &request,
-                protocol::API_VERSION_OFFSET_DELETE,
-            )
-            .and_then(|()| {
-                transport::kp_get_response::<kafka_protocol::messages::OffsetDeleteResponse>(
-                    conn,
-                    protocol::API_VERSION_OFFSET_DELETE,
-                )
-            }) {
-                Ok(resp) => {
-                    return Ok(protocol::admin::convert_offset_delete_response(resp));
-                }
-                Err(e) => last_err = Some(e.with_broker_context(&host, "OffsetDelete")),
-            }
-        }
-
-        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+        self.try_admin_request(
+            "OffsetDelete",
+            protocol::API_VERSION_OFFSET_DELETE,
+            |cid, cid_str| {
+                protocol::admin::build_offset_delete_request(cid, cid_str, group, topics)
+            },
+            protocol::admin::convert_offset_delete_response,
+        )
     }
 
     /// Commit offset for a topic partitions on behalf of a consumer group.
@@ -3968,6 +2745,51 @@ mod tests {
         let directory_id = uuid::Uuid::from_u128(1);
         let topic_id = uuid::Uuid::from_u128(2);
 
+        assert_no_host(client.get_telemetry_subscriptions(directory_id));
+        assert_no_host(client.push_telemetry(&PushTelemetryOptions::new(
+            directory_id,
+            1,
+            bytes::Bytes::from_static(b"metrics"),
+        )));
+        assert_no_host(
+            client.consumer_group_heartbeat(&ConsumerGroupHeartbeatOptions::new(
+                "consumer-group",
+                "member-a",
+            )),
+        );
+        assert_no_host(
+            client
+                .share_group_heartbeat(&ShareGroupHeartbeatOptions::new("share-group", "member-a")),
+        );
+        let share_topic = ShareFetchTopic::new(
+            topic_id,
+            [ShareFetchPartition::new(
+                0,
+                [ShareAcknowledgementBatch::new(
+                    0,
+                    0,
+                    [SHARE_ACK_TYPE_ACCEPT],
+                )],
+            )],
+        );
+        assert_no_host(client.share_fetch(
+            &ShareFetchOptions::new("share-group", "member-a").with_topics([share_topic]),
+        ));
+        assert_no_host(client.share_acknowledge(
+            &ShareAcknowledgeOptions::new("share-group", "member-a").with_topics([
+                ShareAcknowledgeTopic::new(
+                    topic_id,
+                    [ShareAcknowledgePartition::new(
+                        0,
+                        [ShareAcknowledgementBatch::new(
+                            0,
+                            0,
+                            [SHARE_ACK_TYPE_ACCEPT],
+                        )],
+                    )],
+                ),
+            ]),
+        ));
         assert_no_host(client.update_features(&[FeatureUpdate::upgrade("kraft.version", 3)], true));
         assert_no_host(client.unregister_broker(42));
         assert_no_host(

@@ -71,6 +71,7 @@ pub use rustfs_kafka::client::{
     ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntitySpec,
     ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
     ConsumerGroupAssignment, ConsumerGroupDescribeResponseData, ConsumerGroupDescription,
+    ConsumerGroupHeartbeatOptions, ConsumerGroupHeartbeatResponseData,
     ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, CreateAclResult,
     CreateAclsResponseData, CreateDelegationTokenOptions, CreateDelegationTokenResponseData,
     CreatePartitionsOptions, CreatePartitionsResponseData, CreatePartitionsTopicResult,
@@ -91,6 +92,7 @@ pub use rustfs_kafka::client::{
     ElectLeadersPartitionResult, ElectLeadersResponseData, ElectLeadersTopicResult,
     ExpireDelegationTokenResponseData, FEATURE_UPGRADE_TYPE_SAFE_DOWNGRADE,
     FEATURE_UPGRADE_TYPE_UNSAFE_DOWNGRADE, FEATURE_UPGRADE_TYPE_UPGRADE, FeatureUpdate,
+    ForgottenShareFetchTopic, HeartbeatAssignment, HeartbeatTopicPartitions,
     IncrementalAlterConfig, IncrementalAlterConfigsOptions, IncrementalAlterConfigsResource,
     IncrementalAlterConfigsResourceResult, IncrementalAlterConfigsResponseData, KafkaPrincipal,
     LeaderEpochPartitionOffset, LeaderEpochPartitionRequest, LeaderEpochTopicOffsets,
@@ -99,17 +101,27 @@ pub use rustfs_kafka::client::{
     ListedConfigResource, ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition,
     LogDirTopic, OffsetDeletePartitionResult, OffsetDeleteResponseData, OffsetDeleteTopicResult,
     OffsetForLeaderEpochResponseData, PartitionReassignment, PartitionReassignmentSpec,
-    PartitionReassignmentTopicSpec, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
-    QuorumPartition, QuorumReplicaState, QuorumTopic, RaftVersionFeature, RaftVoterCurrentLeader,
-    RaftVoterListener, RaftVoterResponseData, RemoveRaftVoterOptions,
-    RenewDelegationTokenResponseData, ReplicaDirectoryAssignment, ReplicaDirectoryAssignmentResult,
-    ReplicaDirectoryPartitionResult, ReplicaDirectoryTopicAssignment, ReplicaDirectoryTopicResult,
-    RequiredAcks, SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, SaslConfig,
-    ScramCredentialDeletion, ScramCredentialInfo, ScramCredentialUpsertion, SecurityConfig,
-    ShareGroupAssignment, ShareGroupDescribeResponseData, ShareGroupDescription,
+    PartitionReassignmentTopicSpec, ProducerPartition, ProducerTopic, PushTelemetryOptions,
+    PushTelemetryResponseData, QuorumListener, QuorumNode, QuorumPartition, QuorumReplicaState,
+    QuorumTopic, RaftVersionFeature, RaftVoterCurrentLeader, RaftVoterListener,
+    RaftVoterResponseData, RemoveRaftVoterOptions, RenewDelegationTokenResponseData,
+    ReplicaDirectoryAssignment, ReplicaDirectoryAssignmentResult, ReplicaDirectoryPartitionResult,
+    ReplicaDirectoryTopicAssignment, ReplicaDirectoryTopicResult, RequiredAcks,
+    SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, SHARE_ACK_TYPE_ACCEPT, SHARE_ACK_TYPE_GAP,
+    SHARE_ACK_TYPE_REJECT, SHARE_ACK_TYPE_RELEASE, SaslConfig, ScramCredentialDeletion,
+    ScramCredentialInfo, ScramCredentialUpsertion, SecurityConfig, ShareAcknowledgeOptions,
+    ShareAcknowledgePartition, ShareAcknowledgePartitionResponse, ShareAcknowledgeResponseData,
+    ShareAcknowledgeTopic, ShareAcknowledgeTopicResponse, ShareAcknowledgeTopicResponseData,
+    ShareAcknowledgementBatch, ShareAcquiredRecords, ShareAssignment, ShareFetchOptions,
+    ShareFetchPartition, ShareFetchPartitionResponse, ShareFetchResponseData, ShareFetchTopic,
+    ShareFetchTopicResponse, ShareGroupAssignment, ShareGroupDescribeResponseData,
+    ShareGroupDescription, ShareGroupHeartbeatOptions, ShareGroupHeartbeatResponseData,
     ShareGroupMemberDescription, ShareGroupOffsetGroup, ShareGroupOffsetPartition,
-    ShareGroupOffsetRequest, ShareGroupOffsetTopic, ShareGroupTopicPartitions, TlsConfig,
-    TopicPartitionFilter, TopicPartitionsCursor, TopicReassignment, TransactionTopic,
+    ShareGroupOffsetRequest, ShareGroupOffsetTopic, ShareGroupTopicPartitions,
+    ShareHeartbeatResponseData, ShareLeader, ShareNodeEndpoint, ShareTopicPartitions,
+    TELEMETRY_COMPRESSION_GZIP, TELEMETRY_COMPRESSION_LZ4, TELEMETRY_COMPRESSION_NONE,
+    TELEMETRY_COMPRESSION_SNAPPY, TELEMETRY_COMPRESSION_ZSTD, TelemetrySubscriptionsResponseData,
+    TlsConfig, TopicPartitionFilter, TopicPartitionsCursor, TopicReassignment, TransactionTopic,
     TxnOffsetCommitPartitionResult, TxnOffsetCommitResponseData, TxnOffsetCommitTopicPartition,
     TxnOffsetCommitTopicResult, UnregisterBrokerResponseData, UpdateFeaturesResponseData,
     UpdateFeaturesResult, UpdateRaftVoterOptions, UpdateRaftVoterResponseData,
@@ -230,6 +242,33 @@ mod public_reexports_tests {
         let update_voter =
             UpdateRaftVoterOptions::new(2, directory_id, [listener], RaftVersionFeature::new(1, 3));
         assert_eq!(update_voter.raft_version_feature.max_supported_version, 3);
+
+        let telemetry = PushTelemetryOptions::new(
+            directory_id,
+            7,
+            bytes::Bytes::from_static(b"encoded-metrics"),
+        )
+        .with_compression_type(TELEMETRY_COMPRESSION_ZSTD)
+        .with_terminating(true);
+        assert!(telemetry.terminating);
+        assert_eq!(telemetry.compression_type, TELEMETRY_COMPRESSION_ZSTD);
+
+        let heartbeat = ConsumerGroupHeartbeatOptions::new("consumer-group", "member-a");
+        assert_eq!(heartbeat.member_epoch, 0);
+
+        let share_fetch =
+            ShareFetchOptions::new("share-group", "member-a").with_topics([ShareFetchTopic::new(
+                topic_id,
+                [ShareFetchPartition::new(
+                    0,
+                    [ShareAcknowledgementBatch::new(
+                        0,
+                        0,
+                        [SHARE_ACK_TYPE_ACCEPT],
+                    )],
+                )],
+            )]);
+        assert_eq!(share_fetch.topics[0].partitions[0].partition_index, 0);
 
         let share_alter = AlterShareGroupOffsetTopic::new(
             "topic-a",

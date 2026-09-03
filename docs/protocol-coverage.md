@@ -15,10 +15,10 @@ Source checked:
 ## Coverage Summary
 
 - Total `kafka-protocol` API keys: 87.
-- Public or high-level runtime coverage: 56 APIs.
+- Public or high-level runtime coverage: 62 APIs.
 - Internal runtime coverage without direct public API: 10 APIs.
 - Client-facing backlog: 0 APIs.
-- Advanced runtime backlog: 7 APIs (share-consumer and telemetry subsystems).
+- Advanced runtime backlog: no missing public protocol adapters; full share-consumer and telemetry subsystems remain pending.
 - Broker/controller/internal backlog: 14 APIs (quorum, coordinator, KRaft internals).
 
 ## API Matrix
@@ -89,18 +89,18 @@ Source checked:
 | 65 | DescribeTransactions | Public diagnostic implemented | Done. |
 | 66 | ListTransactions | Public diagnostic implemented | Done. |
 | 67 | AllocateProducerIds | Missing broker/internal producer-id API | Keep internal unless idempotent producer allocation is redesigned. |
-| 68 | ConsumerGroupHeartbeat | Missing advanced consumer runtime API | Add as part of modern consumer group protocol runtime, not standalone admin. |
+| 68 | ConsumerGroupHeartbeat | Public low-level consumer heartbeat protocol API implemented | Full modern consumer-group runtime still pending. |
 | 69 | ConsumerGroupDescribe | Public diagnostic implemented | Done. |
 | 70 | ControllerRegistration | Missing controller-internal API | Do not expose as normal client API. |
-| 71 | GetTelemetrySubscriptions | Missing client telemetry runtime API | Add only with a telemetry subsystem. |
-| 72 | PushTelemetry | Missing client telemetry runtime API | Add only with a telemetry subsystem. |
+| 71 | GetTelemetrySubscriptions | Public low-level telemetry protocol API implemented | Full automatic telemetry scheduler/export pipeline still pending. |
+| 72 | PushTelemetry | Public low-level telemetry protocol API implemented | Full automatic telemetry scheduler/export pipeline still pending. |
 | 73 | AssignReplicasToDirs | Public broker storage admin implemented | Done; use only with explicit JBOD/directory-assignment workflow. |
 | 74 | ListConfigResources | Public admin implemented | Done. |
 | 75 | DescribeTopicPartitions | Public diagnostic implemented | Done. |
-| 76 | ShareGroupHeartbeat | Missing advanced share-consumer runtime API | Add as part of full share-consumer runtime. |
+| 76 | ShareGroupHeartbeat | Public low-level share-consumer protocol API implemented | Full share-consumer runtime still pending. |
 | 77 | ShareGroupDescribe | Public diagnostic implemented | Done. |
-| 78 | ShareFetch | Missing advanced share-consumer runtime API | Add as part of full share-consumer runtime. |
-| 79 | ShareAcknowledge | Missing advanced share-consumer runtime API | Add as part of full share-consumer runtime. |
+| 78 | ShareFetch | Public low-level share-consumer protocol API implemented | Full share-consumer runtime still pending. |
+| 79 | ShareAcknowledge | Public low-level share-consumer protocol API implemented | Full share-consumer runtime still pending. |
 | 80 | AddRaftVoter | Public KRaft quorum admin implemented | Done; explicit KRaft voter workflow only. |
 | 81 | RemoveRaftVoter | Public KRaft quorum admin implemented | Done; explicit KRaft voter workflow only. |
 | 82 | UpdateRaftVoter | Public KRaft quorum admin implemented | Done; explicit KRaft voter workflow only. |
@@ -115,9 +115,9 @@ Source checked:
 
 ## Recommended Implementation Batches
 
-All client-facing admin APIs are now implemented. Remaining work falls into advanced
+All visible client-facing protocol adapters are now implemented. Remaining work falls into advanced
 runtime subsystems or internal-only protocols:
 
-1. Share consumer runtime: `ConsumerGroupHeartbeat`, `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
-2. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
+1. Share consumer runtime: build the full session state machine, fetch loop, and acknowledgement scheduler on top of `consumer_group_heartbeat`, `share_group_heartbeat`, `share_fetch`, and `share_acknowledge`.
+2. Telemetry runtime: build the automatic scheduler/export pipeline on top of `get_telemetry_subscriptions` and `push_telemetry`.
 3. Keep broker, controller, coordinator, and raft-log internals unexposed unless a dedicated controller client is introduced.

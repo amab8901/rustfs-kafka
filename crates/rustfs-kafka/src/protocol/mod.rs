@@ -14,6 +14,8 @@ pub mod init_producer_id;
 pub mod metadata;
 pub mod offset;
 pub mod produce;
+pub mod share_consumer;
+pub mod telemetry;
 pub mod transaction;
 
 // Re-export key types for convenience
@@ -77,6 +79,12 @@ pub const API_VERSION_ASSIGN_REPLICAS_TO_DIRS: i16 = 0;
 pub const API_VERSION_ADD_RAFT_VOTER: i16 = 0;
 pub const API_VERSION_REMOVE_RAFT_VOTER: i16 = 0;
 pub const API_VERSION_UPDATE_RAFT_VOTER: i16 = 0;
+pub const API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS: i16 = 0;
+pub const API_VERSION_PUSH_TELEMETRY: i16 = 0;
+pub const API_VERSION_CONSUMER_GROUP_HEARTBEAT: i16 = 1;
+pub const API_VERSION_SHARE_GROUP_HEARTBEAT: i16 = 1;
+pub const API_VERSION_SHARE_FETCH: i16 = 1;
+pub const API_VERSION_SHARE_ACKNOWLEDGE: i16 = 1;
 
 /// Map our `Compression` to `kafka_protocol::records::Compression`.
 pub fn to_kp_compression(c: Compression) -> kafka_protocol::records::Compression {
@@ -287,6 +295,12 @@ fn test_api_version_constants_are_positive() {
         API_VERSION_ADD_RAFT_VOTER,
         API_VERSION_REMOVE_RAFT_VOTER,
         API_VERSION_UPDATE_RAFT_VOTER,
+        API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
+        API_VERSION_PUSH_TELEMETRY,
+        API_VERSION_CONSUMER_GROUP_HEARTBEAT,
+        API_VERSION_SHARE_GROUP_HEARTBEAT,
+        API_VERSION_SHARE_FETCH,
+        API_VERSION_SHARE_ACKNOWLEDGE,
         API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
         API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
     ];
@@ -307,6 +321,12 @@ fn test_api_version_constants_are_positive() {
     assert_eq!(API_VERSION_ADD_RAFT_VOTER, 0);
     assert_eq!(API_VERSION_REMOVE_RAFT_VOTER, 0);
     assert_eq!(API_VERSION_UPDATE_RAFT_VOTER, 0);
+    assert_eq!(API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS, 0);
+    assert_eq!(API_VERSION_PUSH_TELEMETRY, 0);
+    assert_eq!(API_VERSION_CONSUMER_GROUP_HEARTBEAT, 1);
+    assert_eq!(API_VERSION_SHARE_GROUP_HEARTBEAT, 1);
+    assert_eq!(API_VERSION_SHARE_FETCH, 1);
+    assert_eq!(API_VERSION_SHARE_ACKNOWLEDGE, 1);
 }
 
 #[cfg(test)]
