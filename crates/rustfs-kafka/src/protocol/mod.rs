@@ -34,6 +34,10 @@ pub const API_VERSION_FIND_COORDINATOR: i16 = 3;
 pub const API_VERSION_DESCRIBE_GROUPS: i16 = 6;
 pub const API_VERSION_LIST_GROUPS: i16 = 5;
 pub const API_VERSION_DESCRIBE_CLUSTER: i16 = 2;
+pub const API_VERSION_DESCRIBE_CONFIGS: i16 = 4;
+pub const API_VERSION_DESCRIBE_LOG_DIRS: i16 = 4;
+pub const API_VERSION_LIST_PARTITION_REASSIGNMENTS: i16 = 0;
+pub const API_VERSION_DESCRIBE_PRODUCERS: i16 = 0;
 
 /// Map our `Compression` to `kafka_protocol::records::Compression`.
 pub fn to_kp_compression(c: Compression) -> kafka_protocol::records::Compression {
@@ -171,8 +175,14 @@ fn test_api_version_constants_are_positive() {
         API_VERSION_DESCRIBE_GROUPS,
         API_VERSION_LIST_GROUPS,
         API_VERSION_DESCRIBE_CLUSTER,
+        API_VERSION_DESCRIBE_CONFIGS,
+        API_VERSION_DESCRIBE_LOG_DIRS,
+        API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+        API_VERSION_DESCRIBE_PRODUCERS,
     ];
-    assert!(versions.iter().all(|v| *v > 0));
+    assert!(versions.iter().all(|v| *v >= 0));
+    assert_eq!(API_VERSION_LIST_PARTITION_REASSIGNMENTS, 0);
+    assert_eq!(API_VERSION_DESCRIBE_PRODUCERS, 0);
 }
 
 #[cfg(test)]

@@ -8,9 +8,11 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_GROUPS, API_VERSION_FETCH,
+    API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_GROUPS,
+    API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_FETCH,
     API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
-    API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
+    API_VERSION_OFFSET_FETCH, API_VERSION_PRODUCE,
 };
 use tracing::{debug, info};
 
@@ -29,7 +31,33 @@ pub mod api_key {
     pub const DESCRIBE_GROUPS: i16 = 15;
     pub const LIST_GROUPS: i16 = 16;
     pub const API_VERSIONS: i16 = 18;
+    pub const DESCRIBE_CONFIGS: i16 = 32;
+    pub const DESCRIBE_LOG_DIRS: i16 = 35;
+    pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
     pub const DESCRIBE_CLUSTER: i16 = 60;
+    pub const DESCRIBE_PRODUCERS: i16 = 61;
+}
+
+/// One Kafka API version range advertised by a broker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokerApiVersion {
+    /// Kafka API key.
+    pub api_key: i16,
+    /// Minimum version supported by the broker.
+    pub min_version: i16,
+    /// Maximum version supported by the broker.
+    pub max_version: i16,
+}
+
+/// Parsed response from an `ApiVersions` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiVersionsResponseData {
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// API version ranges advertised by the broker.
+    pub api_keys: Vec<BrokerApiVersion>,
 }
 
 /// The version of the `ApiVersions` request we send.
@@ -48,10 +76,21 @@ pub struct BrokerApiVersions {
 impl BrokerApiVersions {
     /// Create from the parsed `ApiVersions` response.
     fn from_response(resp: kafka_protocol::messages::ApiVersionsResponse) -> BrokerApiVersions {
-        let mut versions = HashMap::new();
-        for av in resp.api_keys {
-            versions.insert(av.api_key, (av.min_version, av.max_version));
-        }
+        let response = convert_api_versions_response(resp);
+        BrokerApiVersions::from_api_versions(&response.api_keys)
+    }
+
+    pub(crate) fn from_api_versions(api_versions: &[BrokerApiVersion]) -> BrokerApiVersions {
+        let versions = api_versions
+            .iter()
+            .map(|api_version| {
+                (
+                    api_version.api_key,
+                    (api_version.min_version, api_version.max_version),
+                )
+            })
+            .collect();
+
         BrokerApiVersions { versions }
     }
 
@@ -91,6 +130,47 @@ pub fn fetch_api_versions(
     correlation_id: i32,
     client_id: &str,
 ) -> Result<BrokerApiVersions> {
+    let kp_resp = fetch_api_versions_response_raw(conn, correlation_id, client_id)?;
+    let result = BrokerApiVersions::from_response(kp_resp);
+    info!("Negotiated API versions: {:?}", result);
+    Ok(result)
+}
+
+/// Send an `ApiVersionsRequest` and return public response data.
+pub fn fetch_api_versions_data(
+    conn: &mut KafkaConnection,
+    correlation_id: i32,
+    client_id: &str,
+) -> Result<ApiVersionsResponseData> {
+    fetch_api_versions_response_raw(conn, correlation_id, client_id)
+        .map(convert_api_versions_response)
+}
+
+/// Convert a generated `ApiVersionsResponse` into the crate's public shape.
+#[must_use]
+pub fn convert_api_versions_response(
+    response: kafka_protocol::messages::ApiVersionsResponse,
+) -> ApiVersionsResponseData {
+    ApiVersionsResponseData {
+        error_code: response.error_code,
+        throttle_time_ms: response.throttle_time_ms,
+        api_keys: response
+            .api_keys
+            .into_iter()
+            .map(|api_version| BrokerApiVersion {
+                api_key: api_version.api_key,
+                min_version: api_version.min_version,
+                max_version: api_version.max_version,
+            })
+            .collect(),
+    }
+}
+
+fn fetch_api_versions_response_raw(
+    conn: &mut KafkaConnection,
+    correlation_id: i32,
+    client_id: &str,
+) -> Result<kafka_protocol::messages::ApiVersionsResponse> {
     use bytes::BytesMut;
     use kafka_protocol::messages::{
         ApiVersionsRequest, ApiVersionsResponse, RequestHeader, ResponseHeader,
@@ -144,9 +224,7 @@ pub fn fetch_api_versions(
     )
     .map_err(|_| Error::codec())?;
 
-    let result = BrokerApiVersions::from_response(kp_resp);
-    info!("Negotiated API versions: {:?}", result);
-    Ok(result)
+    Ok(kp_resp)
 }
 
 /// Stores negotiated API versions per broker.
@@ -224,7 +302,11 @@ impl ApiVersionCache {
             api_key::OFFSET_FETCH => API_VERSION_OFFSET_FETCH,
             api_key::DESCRIBE_GROUPS => API_VERSION_DESCRIBE_GROUPS,
             api_key::LIST_GROUPS => API_VERSION_LIST_GROUPS,
+            api_key::DESCRIBE_CONFIGS => API_VERSION_DESCRIBE_CONFIGS,
+            api_key::DESCRIBE_LOG_DIRS => API_VERSION_DESCRIBE_LOG_DIRS,
+            api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
+            api_key::DESCRIBE_PRODUCERS => API_VERSION_DESCRIBE_PRODUCERS,
             _ => 0,
         }
     }
@@ -287,11 +369,35 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
             api_key::LIST_GROUPS,
             API_VERSION_LIST_GROUPS,
         ),
+        describe_configs: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_CONFIGS,
+            API_VERSION_DESCRIBE_CONFIGS,
+        ),
+        describe_log_dirs: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_LOG_DIRS,
+            API_VERSION_DESCRIBE_LOG_DIRS,
+        ),
+        list_partition_reassignments: resolve_api_version(
+            cache,
+            host,
+            api_key::LIST_PARTITION_REASSIGNMENTS,
+            API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+        ),
         describe_cluster: resolve_api_version(
             cache,
             host,
             api_key::DESCRIBE_CLUSTER,
             API_VERSION_DESCRIBE_CLUSTER,
+        ),
+        describe_producers: resolve_api_version(
+            cache,
+            host,
+            api_key::DESCRIBE_PRODUCERS,
+            API_VERSION_DESCRIBE_PRODUCERS,
         ),
     }
 }
@@ -309,7 +415,11 @@ pub struct ApiVersions {
     pub offset_fetch: i16,
     pub describe_groups: i16,
     pub list_groups: i16,
+    pub describe_configs: i16,
+    pub describe_log_dirs: i16,
+    pub list_partition_reassignments: i16,
     pub describe_cluster: i16,
+    pub describe_producers: i16,
 }
 
 impl Default for ApiVersions {
@@ -324,7 +434,11 @@ impl Default for ApiVersions {
             offset_fetch: API_VERSION_OFFSET_FETCH,
             describe_groups: API_VERSION_DESCRIBE_GROUPS,
             list_groups: API_VERSION_LIST_GROUPS,
+            describe_configs: API_VERSION_DESCRIBE_CONFIGS,
+            describe_log_dirs: API_VERSION_DESCRIBE_LOG_DIRS,
+            list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
+            describe_producers: API_VERSION_DESCRIBE_PRODUCERS,
         }
     }
 }
@@ -362,6 +476,35 @@ mod tests {
         assert_eq!(bv.negotiate(api_key::PRODUCE, 12), 8);
         // Unknown key -> fallback.
         assert_eq!(bv.negotiate(99, 7), 7);
+    }
+
+    #[test]
+    fn convert_api_versions_response_preserves_api_ranges() {
+        use kafka_protocol::messages::api_versions_response::ApiVersion;
+        let response = kafka_protocol::messages::ApiVersionsResponse::default()
+            .with_error_code(0)
+            .with_throttle_time_ms(14)
+            .with_api_keys(vec![
+                ApiVersion::default()
+                    .with_api_key(api_key::DESCRIBE_CONFIGS)
+                    .with_min_version(1)
+                    .with_max_version(4),
+            ]);
+
+        let converted = convert_api_versions_response(response);
+
+        assert_eq!(
+            converted,
+            ApiVersionsResponseData {
+                error_code: 0,
+                throttle_time_ms: 14,
+                api_keys: vec![BrokerApiVersion {
+                    api_key: api_key::DESCRIBE_CONFIGS,
+                    min_version: 1,
+                    max_version: 4,
+                }],
+            }
+        );
     }
 
     #[test]
@@ -434,7 +577,14 @@ mod tests {
         assert_eq!(v.offset_fetch, API_VERSION_OFFSET_FETCH);
         assert_eq!(v.describe_groups, API_VERSION_DESCRIBE_GROUPS);
         assert_eq!(v.list_groups, API_VERSION_LIST_GROUPS);
+        assert_eq!(v.describe_configs, API_VERSION_DESCRIBE_CONFIGS);
+        assert_eq!(v.describe_log_dirs, API_VERSION_DESCRIBE_LOG_DIRS);
+        assert_eq!(
+            v.list_partition_reassignments,
+            API_VERSION_LIST_PARTITION_REASSIGNMENTS
+        );
         assert_eq!(v.describe_cluster, API_VERSION_DESCRIBE_CLUSTER);
+        assert_eq!(v.describe_producers, API_VERSION_DESCRIBE_PRODUCERS);
     }
 
     #[test]
@@ -451,7 +601,14 @@ mod tests {
         assert_eq!(v.offset_fetch, d.offset_fetch);
         assert_eq!(v.describe_groups, d.describe_groups);
         assert_eq!(v.list_groups, d.list_groups);
+        assert_eq!(v.describe_configs, d.describe_configs);
+        assert_eq!(v.describe_log_dirs, d.describe_log_dirs);
+        assert_eq!(
+            v.list_partition_reassignments,
+            d.list_partition_reassignments
+        );
         assert_eq!(v.describe_cluster, d.describe_cluster);
+        assert_eq!(v.describe_producers, d.describe_producers);
     }
 
     #[test]
@@ -493,8 +650,24 @@ mod tests {
             API_VERSION_LIST_GROUPS
         );
         assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_CONFIGS),
+            API_VERSION_DESCRIBE_CONFIGS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_LOG_DIRS),
+            API_VERSION_DESCRIBE_LOG_DIRS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::LIST_PARTITION_REASSIGNMENTS),
+            API_VERSION_LIST_PARTITION_REASSIGNMENTS
+        );
+        assert_eq!(
             ApiVersionCache::fallback_version(api_key::DESCRIBE_CLUSTER),
             API_VERSION_DESCRIBE_CLUSTER
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_PRODUCERS),
+            API_VERSION_DESCRIBE_PRODUCERS
         );
     }
 

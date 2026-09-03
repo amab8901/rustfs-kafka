@@ -42,6 +42,14 @@ pub use consumer::{AsyncConsumer, AsyncConsumerBuilder};
 pub use producer::{AsyncProducer, AsyncProducerBuilder, AsyncProducerConfig};
 
 // Re-export core types from the sync crate for convenience
-pub use rustfs_kafka::client::{RequiredAcks, SaslConfig, SecurityConfig, TlsConfig};
+pub use rustfs_kafka::client::{
+    ActiveProducer, ApiVersionsResponseData, BrokerApiVersion, ClusterBroker, ConfigEntry,
+    ConfigResource, ConfigSynonym, DescribeClusterResponseData, DescribeConfigsResponseData,
+    DescribeConfigsResult, DescribeGroupsResponseData, DescribeLogDirsResponseData,
+    DescribeProducersResponseData, DescribedGroup, DescribedGroupMember, ListGroupsResponseData,
+    ListPartitionReassignmentsResponseData, ListedGroup, LogDirDescription, LogDirPartition,
+    LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, RequiredAcks, SaslConfig,
+    SecurityConfig, TlsConfig, TopicPartitionFilter, TopicReassignment,
+};
 pub use rustfs_kafka::error;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};

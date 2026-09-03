@@ -10,10 +10,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 
 - Added read-only Kafka management APIs on `KafkaClient` using `kafka-protocol` generated messages:
+  - `fetch_api_versions`
   - `describe_cluster` / `describe_cluster_with_options`
+  - `describe_configs` / `describe_configs_with_options`
+  - `describe_log_dirs` / `describe_log_dirs_for`
+  - `list_partition_reassignments` / `list_partition_reassignments_for`
+  - `describe_producers`
   - `list_groups` / `list_groups_with_filters`
   - `describe_groups` / `describe_groups_with_options`
-- Added public response data types for cluster brokers, listed groups, described groups, and described group members.
+- Added public response data types for broker API versions, cluster brokers, config resources/entries, listed groups,
+  described groups, described group members, log directory diagnostics, partition reassignments, and active producers.
+- `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 
 ### Changed
 

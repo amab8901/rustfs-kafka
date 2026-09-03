@@ -11,7 +11,9 @@
 //! - **Metadata queries** via `load_metadata_all()` / `load_metadata()`
 //! - **Offset management** via `fetch_offsets()` / `commit_offsets()`
 //! - **Topic management** via `create_topics()` / `delete_topics()`
-//! - **Cluster and group inspection** via `describe_cluster()` / `list_groups()` / `describe_groups()`
+//! - **Cluster, config, broker storage, producer, API version, and group inspection** via
+//!   `describe_cluster()` / `describe_configs()` / `describe_log_dirs()` /
+//!   `describe_producers()` / `fetch_api_versions()` / `list_groups()` / `describe_groups()`
 //!
 //! # Examples
 //!
@@ -47,9 +49,15 @@
 // pub re-exports
 pub use crate::compression::Compression;
 pub use crate::protocol::admin::{
-    ClusterBroker, DescribeClusterResponseData, DescribeGroupsResponseData, DescribedGroup,
-    DescribedGroupMember, ListGroupsResponseData, ListedGroup,
+    ActiveProducer, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
+    DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
+    DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
+    DescribedGroup, DescribedGroupMember, ListGroupsResponseData,
+    ListPartitionReassignmentsResponseData, ListedGroup, LogDirDescription, LogDirPartition,
+    LogDirTopic, PartitionReassignment, ProducerPartition, ProducerTopic, TopicPartitionFilter,
+    TopicReassignment,
 };
+pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
 pub use crate::protocol::delete_topics::{DeleteTopicResult, DeleteTopicsResponseData};
 #[cfg(feature = "producer_timestamp")]
@@ -738,6 +746,50 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Fetches the Kafka API version ranges advertised by a broker.
+    ///
+    /// The request is attempted against configured brokers until one succeeds. On success,
+    /// the client's internal version cache is refreshed for the responding broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn fetch_api_versions(&mut self) -> Result<ApiVersionsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ApiVersions"));
+                    continue;
+                }
+            };
+
+            match crate::protocol::api_versions::fetch_api_versions_data(
+                conn,
+                correlation_id,
+                &self.config.client_id,
+            ) {
+                Ok(resp) => {
+                    self.api_versions.insert(
+                        host,
+                        crate::protocol::api_versions::BrokerApiVersions::from_api_versions(
+                            &resp.api_keys,
+                        ),
+                    );
+                    return Ok(resp);
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "ApiVersions")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Describes the Kafka cluster, including cluster ID, controller ID, and brokers.
     ///
     /// The request is attempted against configured brokers until one succeeds.
@@ -797,6 +849,281 @@ impl KafkaClient {
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeCluster")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes Kafka topic, broker, or broker logger configs.
+    ///
+    /// By default this fetches all config keys without synonyms or documentation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_configs(
+        &mut self,
+        resources: &[ConfigResource],
+    ) -> Result<DescribeConfigsResponseData> {
+        self.describe_configs_with_options(resources, false, false)
+    }
+
+    /// Describes Kafka configs with optional synonyms and broker documentation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_configs_with_options(
+        &mut self,
+        resources: &[ConfigResource],
+        include_synonyms: bool,
+        include_documentation: bool,
+    ) -> Result<DescribeConfigsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeConfigs"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_configs_request(
+                correlation_id,
+                &self.config.client_id,
+                resources,
+                include_synonyms,
+                include_documentation,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_CONFIGS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeConfigsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_CONFIGS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_configs_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeConfigs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes all broker log directories visible to the contacted broker.
+    ///
+    /// This returns per-log-dir topic and partition storage details, including the
+    /// volume capacity fields exposed by Kafka's latest `DescribeLogDirs` version.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_log_dirs(&mut self) -> Result<DescribeLogDirsResponseData> {
+        self.describe_log_dirs_with_filter(None)
+    }
+
+    /// Describes broker log directories for selected topic partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_log_dirs_for(
+        &mut self,
+        topics: &[TopicPartitionFilter],
+    ) -> Result<DescribeLogDirsResponseData> {
+        self.describe_log_dirs_with_filter(Some(topics))
+    }
+
+    fn describe_log_dirs_with_filter(
+        &mut self,
+        topics: Option<&[TopicPartitionFilter]>,
+    ) -> Result<DescribeLogDirsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeLogDirs"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_log_dirs_request(
+                correlation_id,
+                &self.config.client_id,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_LOG_DIRS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeLogDirsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_LOG_DIRS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_log_dirs_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeLogDirs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Lists all ongoing partition reassignments visible to the contacted broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is too large, brokers are unreachable, or the
+    /// broker response cannot be decoded.
+    pub fn list_partition_reassignments(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<ListPartitionReassignmentsResponseData> {
+        self.list_partition_reassignments_with_filter(None, timeout)
+    }
+
+    /// Lists ongoing partition reassignments for selected topic partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is too large, brokers are unreachable, or the
+    /// broker response cannot be decoded.
+    pub fn list_partition_reassignments_for(
+        &mut self,
+        topics: &[TopicPartitionFilter],
+        timeout: Duration,
+    ) -> Result<ListPartitionReassignmentsResponseData> {
+        self.list_partition_reassignments_with_filter(Some(topics), timeout)
+    }
+
+    fn list_partition_reassignments_with_filter(
+        &mut self,
+        topics: Option<&[TopicPartitionFilter]>,
+        timeout: Duration,
+    ) -> Result<ListPartitionReassignmentsResponseData> {
+        let timeout_ms = crate::protocol::to_millis_i32(timeout)?;
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ListPartitionReassignments"));
+                    continue;
+                }
+            };
+
+            let (header, request) =
+                crate::protocol::admin::build_list_partition_reassignments_request(
+                    correlation_id,
+                    &self.config.client_id,
+                    topics,
+                    timeout_ms,
+                );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::ListPartitionReassignmentsResponse,
+                >(
+                    conn,
+                    crate::protocol::API_VERSION_LIST_PARTITION_REASSIGNMENTS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_list_partition_reassignments_response(resp),
+                    );
+                }
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "ListPartitionReassignments"));
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes active producers for selected topic partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_producers(
+        &mut self,
+        topics: &[TopicPartitionFilter],
+    ) -> Result<DescribeProducersResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeProducers"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_producers_request(
+                correlation_id,
+                &self.config.client_id,
+                topics,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_PRODUCERS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeProducersResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_PRODUCERS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_producers_response(
+                        resp,
+                    ));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeProducers")),
             }
         }
 

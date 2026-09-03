@@ -129,9 +129,13 @@ tx.commit().unwrap();
 ### 4.2 Cluster and group inspection
 
 ```rust,no_run
-use rustfs_kafka::client::KafkaClient;
+use std::time::Duration;
+use rustfs_kafka::client::{ConfigResource, KafkaClient, TopicPartitionFilter};
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
+
+let api_versions = client.fetch_api_versions().unwrap();
+println!("broker supports {} Kafka APIs", api_versions.api_keys.len());
 
 let cluster = client.describe_cluster().unwrap();
 println!(
@@ -156,6 +160,40 @@ let described = client.describe_groups(&["my-group"]).unwrap();
 for group in described.groups {
     println!("group={} members={}", group.group_id, group.members.len());
 }
+
+let configs = client
+    .describe_configs(&[
+        ConfigResource::topic("my-topic").with_configuration_keys(["retention.ms"]),
+        ConfigResource::broker("1"),
+    ])
+    .unwrap();
+for resource in configs.results {
+    println!("resource={} configs={}", resource.resource_name, resource.configs.len());
+}
+
+let partitions = [TopicPartitionFilter::new("my-topic", [0, 1])];
+
+let log_dirs = client.describe_log_dirs_for(&partitions).unwrap();
+for log_dir in log_dirs.results {
+    println!(
+        "log_dir={} usable_bytes={} topics={}",
+        log_dir.log_dir,
+        log_dir.usable_bytes,
+        log_dir.topics.len()
+    );
+}
+
+let reassignments = client
+    .list_partition_reassignments_for(&partitions, Duration::from_secs(10))
+    .unwrap();
+for topic in reassignments.topics {
+    println!("topic={} reassignments={}", topic.name, topic.partitions.len());
+}
+
+let producers = client.describe_producers(&partitions).unwrap();
+for topic in producers.topics {
+    println!("topic={} producer_partitions={}", topic.name, topic.partitions.len());
+}
 ```
 
 Optional variants expose the highest fields currently wired from `kafka-protocol`:
@@ -163,6 +201,9 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_cluster_with_options(include_authorized_operations, include_fenced_brokers)`
 - `list_groups_with_filters(states_filter, types_filter)`
 - `describe_groups_with_options(groups, include_authorized_operations)`
+- `describe_configs_with_options(resources, include_synonyms, include_documentation)`
+- `describe_log_dirs_for(topic_partition_filters)`
+- `list_partition_reassignments_for(topic_partition_filters, timeout)`
 
 ### 4.3 Topic create/delete
 
