@@ -28,7 +28,8 @@ rustfs-kafka-async = "1.2.0"
 - Kafka client metadata, fetch, produce, offset commit, committed-offset deletion, API version, cluster/config
   inspection/mutation, config-resource discovery, topic partition discovery, ACL inspection/mutation, delegation token
   lifecycle, client quota inspection/mutation, SCRAM credential mutation, broker log directory reassignment, KRaft
-  quorum/feature/broker lifecycle admin, partition reassignment query/mutation, partition expansion, record deletion,
+  quorum/feature/broker lifecycle/voter admin, replica directory assignment, partition reassignment query/mutation,
+  partition expansion, record deletion,
   leader election, leader-epoch offsets, active producer, transaction offset commit, consumer group deletion/inspection,
   and share group inspection/mutation APIs.
 - High-level `Consumer` and `Producer` abstractions.

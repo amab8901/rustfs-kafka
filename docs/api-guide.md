@@ -577,6 +577,9 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `delete_share_group_offsets(group_id, topics)`
 - `update_features(feature_updates, validate_only)`
 - `unregister_broker(broker_id)` for explicitly planned KRaft broker removal.
+- `assign_replicas_to_dirs(options)` for explicit broker log directory placement.
+- `add_raft_voter(options)`, `remove_raft_voter(options)`, and `update_raft_voter(options)` for explicit KRaft
+  quorum voter administration.
 - `alter_configs(options)` is deprecated; prefer `incremental_alter_configs(options)`.
 
 ### 4.3 Topic create/delete

@@ -16,7 +16,8 @@
 //!   `describe_delegation_tokens()` / `describe_client_quotas()` / `describe_user_scram_credentials()` /
 //!   `describe_quorum()` / `list_config_resources()` / `describe_topic_partitions()` / `describe_producers()` /
 //!   `list_transactions()` / `fetch_api_versions()` / `list_groups()` / `describe_groups()` / `describe_consumer_groups()`
-//!   / `describe_share_groups()` / `describe_share_group_offsets()`
+//!   / `describe_share_groups()` / `describe_share_group_offsets()` / `assign_replicas_to_dirs()` /
+//!   `add_raft_voter()` / `remove_raft_voter()` / `update_raft_voter()`
 //!
 //! # Examples
 //!
@@ -61,9 +62,9 @@ pub use crate::protocol::admin::{
     ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
     ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclBinding, AclDescription,
-    AclResource, ActiveProducer, AddOffsetsToTxnResponseData, AlterClientQuotaEntryResult,
-    AlterClientQuotasOptions, AlterClientQuotasResponseData, AlterConfigsEntry,
-    AlterConfigsOptions, AlterConfigsResource, AlterConfigsResourceResult,
+    AclResource, ActiveProducer, AddOffsetsToTxnResponseData, AddRaftVoterOptions,
+    AlterClientQuotaEntryResult, AlterClientQuotasOptions, AlterClientQuotasResponseData,
+    AlterConfigsEntry, AlterConfigsOptions, AlterConfigsResource, AlterConfigsResourceResult,
     AlterConfigsResponseData, AlterPartitionReassignmentsOptions,
     AlterPartitionReassignmentsPartitionResult, AlterPartitionReassignmentsResponseData,
     AlterPartitionReassignmentsTopicResult, AlterReplicaLogDir, AlterReplicaLogDirPartitionResult,
@@ -72,6 +73,7 @@ pub use crate::protocol::admin::{
     AlterShareGroupOffsetTopic, AlterShareGroupOffsetTopicResult,
     AlterShareGroupOffsetsResponseData, AlterUserScramCredentialResult,
     AlterUserScramCredentialsOptions, AlterUserScramCredentialsResponseData,
+    AssignReplicasToDirsOptions, AssignReplicasToDirsResponseData,
     CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT,
     CONFIG_OPERATION_APPEND, CONFIG_OPERATION_DELETE, CONFIG_OPERATION_SET,
     CONFIG_OPERATION_SUBTRACT, CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER,
@@ -108,7 +110,10 @@ pub use crate::protocol::admin::{
     LogDirTopic, OffsetDeletePartitionResult, OffsetDeleteResponseData, OffsetDeleteTopicResult,
     OffsetForLeaderEpochResponseData, PartitionReassignment, PartitionReassignmentSpec,
     PartitionReassignmentTopicSpec, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
-    QuorumPartition, QuorumReplicaState, QuorumTopic, RenewDelegationTokenResponseData,
+    QuorumPartition, QuorumReplicaState, QuorumTopic, RaftVersionFeature, RaftVoterCurrentLeader,
+    RaftVoterListener, RaftVoterResponseData, RemoveRaftVoterOptions,
+    RenewDelegationTokenResponseData, ReplicaDirectoryAssignment, ReplicaDirectoryAssignmentResult,
+    ReplicaDirectoryPartitionResult, ReplicaDirectoryTopicAssignment, ReplicaDirectoryTopicResult,
     SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, ScramCredentialDeletion, ScramCredentialInfo,
     ScramCredentialUpsertion, ShareGroupAssignment, ShareGroupDescribeResponseData,
     ShareGroupDescription, ShareGroupMemberDescription, ShareGroupOffsetGroup,
@@ -116,7 +121,8 @@ pub use crate::protocol::admin::{
     ShareGroupTopicPartitions, TopicPartitionFilter, TopicPartitionsCursor, TopicReassignment,
     TransactionTopic, TxnOffsetCommitPartitionResult, TxnOffsetCommitResponseData,
     TxnOffsetCommitTopicPartition, TxnOffsetCommitTopicResult, UnregisterBrokerResponseData,
-    UpdateFeaturesResponseData, UpdateFeaturesResult, UserScramCredentialsDescription,
+    UpdateFeaturesResponseData, UpdateFeaturesResult, UpdateRaftVoterOptions,
+    UpdateRaftVoterResponseData, UserScramCredentialsDescription,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
@@ -1949,6 +1955,205 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Assigns topic replicas to broker log directory IDs.
+    ///
+    /// This is a broker storage administration API intended for explicit JBOD
+    /// directory placement workflows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn assign_replicas_to_dirs(
+        &mut self,
+        options: &AssignReplicasToDirsOptions,
+    ) -> Result<AssignReplicasToDirsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AssignReplicasToDirs"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_assign_replicas_to_dirs_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::AssignReplicasToDirsResponse,
+                >(conn, protocol::API_VERSION_ASSIGN_REPLICAS_TO_DIRS)
+            }) {
+                Ok(resp) => {
+                    return Ok(protocol::admin::convert_assign_replicas_to_dirs_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AssignReplicasToDirs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Adds a voter to the `KRaft` controller quorum.
+    ///
+    /// This is an explicit `KRaft` quorum administration API. Prefer verifying
+    /// the target controller listener and directory ID before calling it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn add_raft_voter(
+        &mut self,
+        options: &AddRaftVoterOptions,
+    ) -> Result<RaftVoterResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "AddRaftVoter"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_add_raft_voter_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_ADD_RAFT_VOTER,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::AddRaftVoterResponse>(
+                    conn,
+                    protocol::API_VERSION_ADD_RAFT_VOTER,
+                )
+            }) {
+                Ok(resp) => return Ok(protocol::admin::convert_add_raft_voter_response(resp)),
+                Err(e) => last_err = Some(e.with_broker_context(&host, "AddRaftVoter")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Removes a voter from the `KRaft` controller quorum.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn remove_raft_voter(
+        &mut self,
+        options: &RemoveRaftVoterOptions,
+    ) -> Result<RaftVoterResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "RemoveRaftVoter"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_remove_raft_voter_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_REMOVE_RAFT_VOTER,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::RemoveRaftVoterResponse>(
+                    conn,
+                    protocol::API_VERSION_REMOVE_RAFT_VOTER,
+                )
+            }) {
+                Ok(resp) => return Ok(protocol::admin::convert_remove_raft_voter_response(resp)),
+                Err(e) => last_err = Some(e.with_broker_context(&host, "RemoveRaftVoter")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Updates a voter in the `KRaft` controller quorum.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn update_raft_voter(
+        &mut self,
+        options: &UpdateRaftVoterOptions,
+    ) -> Result<UpdateRaftVoterResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "UpdateRaftVoter"));
+                    continue;
+                }
+            };
+
+            let (header, request) = protocol::admin::build_update_raft_voter_request(
+                correlation_id,
+                &self.config.client_id,
+                options,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                protocol::API_VERSION_UPDATE_RAFT_VOTER,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::UpdateRaftVoterResponse>(
+                    conn,
+                    protocol::API_VERSION_UPDATE_RAFT_VOTER,
+                )
+            }) {
+                Ok(resp) => return Ok(protocol::admin::convert_update_raft_voter_response(resp)),
+                Err(e) => last_err = Some(e.with_broker_context(&host, "UpdateRaftVoter")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Elects leaders using the supplied Kafka election type and partition scope.
     ///
     /// Use `ElectLeadersOptions::all_partitions` to ask the broker to elect leaders
@@ -3760,9 +3965,33 @@ mod tests {
     #[test]
     fn feature_and_share_mutation_apis_surface_no_host() {
         let mut client = KafkaClient::new(vec![]);
+        let directory_id = uuid::Uuid::from_u128(1);
+        let topic_id = uuid::Uuid::from_u128(2);
 
         assert_no_host(client.update_features(&[FeatureUpdate::upgrade("kraft.version", 3)], true));
         assert_no_host(client.unregister_broker(42));
+        assert_no_host(
+            client.assign_replicas_to_dirs(&AssignReplicasToDirsOptions::new(
+                1,
+                10,
+                [ReplicaDirectoryAssignment::new(
+                    directory_id,
+                    [ReplicaDirectoryTopicAssignment::new(topic_id, [0])],
+                )],
+            )),
+        );
+        assert_no_host(client.add_raft_voter(&AddRaftVoterOptions::new(
+            2,
+            directory_id,
+            [RaftVoterListener::new("CONTROLLER", "controller-2", 9093)],
+        )));
+        assert_no_host(client.remove_raft_voter(&RemoveRaftVoterOptions::new(2, directory_id)));
+        assert_no_host(client.update_raft_voter(&UpdateRaftVoterOptions::new(
+            2,
+            directory_id,
+            [RaftVoterListener::new("CONTROLLER", "controller-2", 9093)],
+            RaftVersionFeature::new(1, 3),
+        )));
         assert_no_host(client.alter_share_group_offsets(
             "my-group",
             &[AlterShareGroupOffsetTopic::new(

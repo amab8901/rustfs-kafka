@@ -38,6 +38,7 @@ kafka-protocol = { version = "0.18.0", default-features = false, features = ["cl
 indexmap = "2.14.1"
 thiserror = "2.0.20"
 tracing = "0.1.44"
+uuid = "1.26.0"
 
 # Optional dependencies (made optional in consuming crates via dep: syntax)
 rustls = { version = "0.23.43", default-features = false, features = ["logging", "std", "tls12"] }

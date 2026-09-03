@@ -8,9 +8,10 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_CONFIGS,
-    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_ALTER_REPLICA_LOG_DIRS,
-    API_VERSION_ALTER_SHARE_GROUP_OFFSETS, API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ADD_RAFT_VOTER, API_VERSION_ALTER_CLIENT_QUOTAS,
+    API_VERSION_ALTER_CONFIGS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+    API_VERSION_ALTER_REPLICA_LOG_DIRS, API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
+    API_VERSION_ALTER_USER_SCRAM_CREDENTIALS, API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
     API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS,
     API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
     API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
@@ -25,8 +26,9 @@ use crate::protocol::{
     API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
     API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
     API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
-    API_VERSION_PRODUCE, API_VERSION_RENEW_DELEGATION_TOKEN, API_VERSION_SHARE_GROUP_DESCRIBE,
-    API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER, API_VERSION_UPDATE_FEATURES,
+    API_VERSION_PRODUCE, API_VERSION_REMOVE_RAFT_VOTER, API_VERSION_RENEW_DELEGATION_TOKEN,
+    API_VERSION_SHARE_GROUP_DESCRIBE, API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER,
+    API_VERSION_UPDATE_FEATURES, API_VERSION_UPDATE_RAFT_VOTER,
 };
 use tracing::{debug, info};
 
@@ -79,9 +81,13 @@ pub mod api_key {
     pub const CONSUMER_GROUP_DESCRIBE: i16 = 69;
     pub const ADD_OFFSETS_TO_TXN: i16 = 25;
     pub const TXN_OFFSET_COMMIT: i16 = 28;
+    pub const ASSIGN_REPLICAS_TO_DIRS: i16 = 73;
     pub const LIST_CONFIG_RESOURCES: i16 = 74;
     pub const DESCRIBE_TOPIC_PARTITIONS: i16 = 75;
     pub const SHARE_GROUP_DESCRIBE: i16 = 77;
+    pub const ADD_RAFT_VOTER: i16 = 80;
+    pub const REMOVE_RAFT_VOTER: i16 = 81;
+    pub const UPDATE_RAFT_VOTER: i16 = 82;
     pub const DESCRIBE_SHARE_GROUP_OFFSETS: i16 = 90;
     pub const ALTER_SHARE_GROUP_OFFSETS: i16 = 91;
     pub const DELETE_SHARE_GROUP_OFFSETS: i16 = 92;
@@ -380,6 +386,10 @@ impl ApiVersionCache {
             api_key::DESCRIBE_CLUSTER => API_VERSION_DESCRIBE_CLUSTER,
             api_key::DESCRIBE_PRODUCERS => API_VERSION_DESCRIBE_PRODUCERS,
             api_key::UNREGISTER_BROKER => API_VERSION_UNREGISTER_BROKER,
+            api_key::ASSIGN_REPLICAS_TO_DIRS => API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
+            api_key::ADD_RAFT_VOTER => API_VERSION_ADD_RAFT_VOTER,
+            api_key::REMOVE_RAFT_VOTER => API_VERSION_REMOVE_RAFT_VOTER,
+            api_key::UPDATE_RAFT_VOTER => API_VERSION_UPDATE_RAFT_VOTER,
             api_key::DESCRIBE_TRANSACTIONS => API_VERSION_DESCRIBE_TRANSACTIONS,
             api_key::LIST_TRANSACTIONS => API_VERSION_LIST_TRANSACTIONS,
             api_key::ADD_OFFSETS_TO_TXN => API_VERSION_ADD_OFFSETS_TO_TXN,
@@ -453,8 +463,10 @@ fn resolve_admin_api_versions(cache: &ApiVersionCache, host: &str, versions: &mu
     versions.delete_acls = version!(DELETE_ACLS, API_VERSION_DELETE_ACLS);
     versions.describe_configs = version!(DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS);
     versions.alter_configs = version!(ALTER_CONFIGS, API_VERSION_ALTER_CONFIGS);
-    versions.incremental_alter_configs =
-        version!(INCREMENTAL_ALTER_CONFIGS, API_VERSION_INCREMENTAL_ALTER_CONFIGS);
+    versions.incremental_alter_configs = version!(
+        INCREMENTAL_ALTER_CONFIGS,
+        API_VERSION_INCREMENTAL_ALTER_CONFIGS
+    );
     versions.alter_replica_log_dirs =
         version!(ALTER_REPLICA_LOG_DIRS, API_VERSION_ALTER_REPLICA_LOG_DIRS);
     versions.describe_log_dirs = version!(DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS);
@@ -473,6 +485,11 @@ fn resolve_admin_api_versions(cache: &ApiVersionCache, host: &str, versions: &mu
     versions.describe_cluster = version!(DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CLUSTER);
     versions.describe_producers = version!(DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_PRODUCERS);
     versions.unregister_broker = version!(UNREGISTER_BROKER, API_VERSION_UNREGISTER_BROKER);
+    versions.assign_replicas_to_dirs =
+        version!(ASSIGN_REPLICAS_TO_DIRS, API_VERSION_ASSIGN_REPLICAS_TO_DIRS);
+    versions.add_raft_voter = version!(ADD_RAFT_VOTER, API_VERSION_ADD_RAFT_VOTER);
+    versions.remove_raft_voter = version!(REMOVE_RAFT_VOTER, API_VERSION_REMOVE_RAFT_VOTER);
+    versions.update_raft_voter = version!(UPDATE_RAFT_VOTER, API_VERSION_UPDATE_RAFT_VOTER);
     versions.list_config_resources =
         version!(LIST_CONFIG_RESOURCES, API_VERSION_LIST_CONFIG_RESOURCES);
     versions.describe_topic_partitions = version!(
@@ -548,8 +565,10 @@ fn resolve_group_api_versions(cache: &ApiVersionCache, host: &str, versions: &mu
         DESCRIBE_SHARE_GROUP_OFFSETS,
         API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS
     );
-    versions.alter_share_group_offsets =
-        version!(ALTER_SHARE_GROUP_OFFSETS, API_VERSION_ALTER_SHARE_GROUP_OFFSETS);
+    versions.alter_share_group_offsets = version!(
+        ALTER_SHARE_GROUP_OFFSETS,
+        API_VERSION_ALTER_SHARE_GROUP_OFFSETS
+    );
     versions.delete_share_group_offsets = version!(
         DELETE_SHARE_GROUP_OFFSETS,
         API_VERSION_DELETE_SHARE_GROUP_OFFSETS
@@ -598,6 +617,10 @@ pub struct ApiVersions {
     pub describe_cluster: i16,
     pub describe_producers: i16,
     pub unregister_broker: i16,
+    pub assign_replicas_to_dirs: i16,
+    pub add_raft_voter: i16,
+    pub remove_raft_voter: i16,
+    pub update_raft_voter: i16,
     pub describe_transactions: i16,
     pub list_transactions: i16,
     pub add_offsets_to_txn: i16,
@@ -652,6 +675,10 @@ impl Default for ApiVersions {
             describe_cluster: API_VERSION_DESCRIBE_CLUSTER,
             describe_producers: API_VERSION_DESCRIBE_PRODUCERS,
             unregister_broker: API_VERSION_UNREGISTER_BROKER,
+            assign_replicas_to_dirs: API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
+            add_raft_voter: API_VERSION_ADD_RAFT_VOTER,
+            remove_raft_voter: API_VERSION_REMOVE_RAFT_VOTER,
+            update_raft_voter: API_VERSION_UPDATE_RAFT_VOTER,
             describe_transactions: API_VERSION_DESCRIBE_TRANSACTIONS,
             list_transactions: API_VERSION_LIST_TRANSACTIONS,
             add_offsets_to_txn: API_VERSION_ADD_OFFSETS_TO_TXN,
@@ -857,6 +884,13 @@ mod tests {
         assert_eq!(v.describe_cluster, API_VERSION_DESCRIBE_CLUSTER);
         assert_eq!(v.describe_producers, API_VERSION_DESCRIBE_PRODUCERS);
         assert_eq!(v.unregister_broker, API_VERSION_UNREGISTER_BROKER);
+        assert_eq!(
+            v.assign_replicas_to_dirs,
+            API_VERSION_ASSIGN_REPLICAS_TO_DIRS
+        );
+        assert_eq!(v.add_raft_voter, API_VERSION_ADD_RAFT_VOTER);
+        assert_eq!(v.remove_raft_voter, API_VERSION_REMOVE_RAFT_VOTER);
+        assert_eq!(v.update_raft_voter, API_VERSION_UPDATE_RAFT_VOTER);
         assert_eq!(v.describe_transactions, API_VERSION_DESCRIBE_TRANSACTIONS);
         assert_eq!(v.list_transactions, API_VERSION_LIST_TRANSACTIONS);
         assert_eq!(v.add_offsets_to_txn, API_VERSION_ADD_OFFSETS_TO_TXN);

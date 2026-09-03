@@ -28,6 +28,7 @@ kafka-protocol.workspace = true
 indexmap.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 # Optional: TLS (rustls)
 rustls = { workspace = true, optional = true }

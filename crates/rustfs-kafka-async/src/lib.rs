@@ -52,9 +52,9 @@ pub use rustfs_kafka::client::{
     ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
     ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
     ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclBinding, AclDescription,
-    AclResource, ActiveProducer, AddOffsetsToTxnResponseData, AlterClientQuotaEntryResult,
-    AlterClientQuotasOptions, AlterClientQuotasResponseData, AlterConfigsEntry,
-    AlterConfigsOptions, AlterConfigsResource, AlterConfigsResourceResult,
+    AclResource, ActiveProducer, AddOffsetsToTxnResponseData, AddRaftVoterOptions,
+    AlterClientQuotaEntryResult, AlterClientQuotasOptions, AlterClientQuotasResponseData,
+    AlterConfigsEntry, AlterConfigsOptions, AlterConfigsResource, AlterConfigsResourceResult,
     AlterConfigsResponseData, AlterPartitionReassignmentsOptions,
     AlterPartitionReassignmentsPartitionResult, AlterPartitionReassignmentsResponseData,
     AlterPartitionReassignmentsTopicResult, AlterReplicaLogDir, AlterReplicaLogDirPartitionResult,
@@ -63,25 +63,26 @@ pub use rustfs_kafka::client::{
     AlterShareGroupOffsetTopic, AlterShareGroupOffsetTopicResult,
     AlterShareGroupOffsetsResponseData, AlterUserScramCredentialResult,
     AlterUserScramCredentialsOptions, AlterUserScramCredentialsResponseData,
-    ApiVersionsResponseData, BrokerApiVersion, CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
-    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, CONFIG_OPERATION_APPEND,
-    CONFIG_OPERATION_DELETE, CONFIG_OPERATION_SET, CONFIG_OPERATION_SUBTRACT,
-    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC,
-    ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter,
-    ClientQuotaEntitySpec, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
-    ConfigResource, ConfigSynonym, ConsumerGroupAssignment, ConsumerGroupDescribeResponseData,
-    ConsumerGroupDescription, ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions,
-    CreateAclResult, CreateAclsResponseData, CreateDelegationTokenOptions,
-    CreateDelegationTokenResponseData, CreatePartitionsOptions, CreatePartitionsResponseData,
-    CreatePartitionsTopicResult, CreatePartitionsTopicSpec, DelegationTokenDescription,
-    DeleteAclsFilterResult, DeleteAclsResponseData, DeleteGroupsResponseData,
-    DeleteRecordsPartitionResult, DeleteRecordsPartitionSpec, DeleteRecordsResponseData,
-    DeleteRecordsTopicResult, DeleteRecordsTopicSpec, DeleteShareGroupOffsetTopic,
-    DeleteShareGroupOffsetTopicResult, DeleteShareGroupOffsetsResponseData, DeletedAcl,
-    DeletedGroup, DescribeAclsFilter, DescribeAclsResponseData, DescribeClientQuotasOptions,
-    DescribeClientQuotasResponseData, DescribeClusterResponseData, DescribeConfigsResponseData,
-    DescribeConfigsResult, DescribeDelegationTokenResponseData, DescribeGroupsResponseData,
-    DescribeLogDirsResponseData, DescribeProducersResponseData, DescribeQuorumResponseData,
+    ApiVersionsResponseData, AssignReplicasToDirsOptions, AssignReplicasToDirsResponseData,
+    BrokerApiVersion, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
+    CLIENT_QUOTA_MATCH_EXACT, CONFIG_OPERATION_APPEND, CONFIG_OPERATION_DELETE,
+    CONFIG_OPERATION_SET, CONFIG_OPERATION_SUBTRACT, CONFIG_RESOURCE_TYPE_BROKER,
+    CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaAlteration,
+    ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntitySpec,
+    ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
+    ConsumerGroupAssignment, ConsumerGroupDescribeResponseData, ConsumerGroupDescription,
+    ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, CreateAclResult,
+    CreateAclsResponseData, CreateDelegationTokenOptions, CreateDelegationTokenResponseData,
+    CreatePartitionsOptions, CreatePartitionsResponseData, CreatePartitionsTopicResult,
+    CreatePartitionsTopicSpec, DelegationTokenDescription, DeleteAclsFilterResult,
+    DeleteAclsResponseData, DeleteGroupsResponseData, DeleteRecordsPartitionResult,
+    DeleteRecordsPartitionSpec, DeleteRecordsResponseData, DeleteRecordsTopicResult,
+    DeleteRecordsTopicSpec, DeleteShareGroupOffsetTopic, DeleteShareGroupOffsetTopicResult,
+    DeleteShareGroupOffsetsResponseData, DeletedAcl, DeletedGroup, DescribeAclsFilter,
+    DescribeAclsResponseData, DescribeClientQuotasOptions, DescribeClientQuotasResponseData,
+    DescribeClusterResponseData, DescribeConfigsResponseData, DescribeConfigsResult,
+    DescribeDelegationTokenResponseData, DescribeGroupsResponseData, DescribeLogDirsResponseData,
+    DescribeProducersResponseData, DescribeQuorumResponseData,
     DescribeShareGroupOffsetsResponseData, DescribeTopicPartitionsOptions,
     DescribeTopicPartitionsResponseData, DescribeTransactionsResponseData,
     DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
@@ -99,7 +100,10 @@ pub use rustfs_kafka::client::{
     LogDirTopic, OffsetDeletePartitionResult, OffsetDeleteResponseData, OffsetDeleteTopicResult,
     OffsetForLeaderEpochResponseData, PartitionReassignment, PartitionReassignmentSpec,
     PartitionReassignmentTopicSpec, ProducerPartition, ProducerTopic, QuorumListener, QuorumNode,
-    QuorumPartition, QuorumReplicaState, QuorumTopic, RenewDelegationTokenResponseData,
+    QuorumPartition, QuorumReplicaState, QuorumTopic, RaftVersionFeature, RaftVoterCurrentLeader,
+    RaftVoterListener, RaftVoterResponseData, RemoveRaftVoterOptions,
+    RenewDelegationTokenResponseData, ReplicaDirectoryAssignment, ReplicaDirectoryAssignmentResult,
+    ReplicaDirectoryPartitionResult, ReplicaDirectoryTopicAssignment, ReplicaDirectoryTopicResult,
     RequiredAcks, SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, SaslConfig,
     ScramCredentialDeletion, ScramCredentialInfo, ScramCredentialUpsertion, SecurityConfig,
     ShareGroupAssignment, ShareGroupDescribeResponseData, ShareGroupDescription,
@@ -108,7 +112,8 @@ pub use rustfs_kafka::client::{
     TopicPartitionFilter, TopicPartitionsCursor, TopicReassignment, TransactionTopic,
     TxnOffsetCommitPartitionResult, TxnOffsetCommitResponseData, TxnOffsetCommitTopicPartition,
     TxnOffsetCommitTopicResult, UnregisterBrokerResponseData, UpdateFeaturesResponseData,
-    UpdateFeaturesResult, UserScramCredentialsDescription,
+    UpdateFeaturesResult, UpdateRaftVoterOptions, UpdateRaftVoterResponseData,
+    UserScramCredentialsDescription,
 };
 pub use rustfs_kafka::error;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};
@@ -204,6 +209,27 @@ mod public_reexports_tests {
             feature_update.upgrade_type,
             FEATURE_UPGRADE_TYPE_SAFE_DOWNGRADE
         );
+
+        let directory_id = uuid::Uuid::from_u128(1);
+        let topic_id = uuid::Uuid::from_u128(2);
+        let assignment = ReplicaDirectoryAssignment::new(
+            directory_id,
+            [ReplicaDirectoryTopicAssignment::new(topic_id, [0, 1])],
+        );
+        let assign_dirs = AssignReplicasToDirsOptions::new(1, 10, [assignment]);
+        assert_eq!(assign_dirs.directories[0].directory_id, directory_id);
+
+        let listener = RaftVoterListener::new("CONTROLLER", "controller-1", 9093);
+        let add_voter =
+            AddRaftVoterOptions::new(2, directory_id, [listener.clone()]).with_timeout_ms(30_000);
+        assert_eq!(add_voter.listeners[0].port, 9093);
+
+        let remove_voter = RemoveRaftVoterOptions::new(2, directory_id);
+        assert_eq!(remove_voter.voter_id, 2);
+
+        let update_voter =
+            UpdateRaftVoterOptions::new(2, directory_id, [listener], RaftVersionFeature::new(1, 3));
+        assert_eq!(update_voter.raft_version_feature.max_supported_version, 3);
 
         let share_alter = AlterShareGroupOffsetTopic::new(
             "topic-a",

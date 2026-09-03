@@ -2,21 +2,22 @@
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    AddOffsetsToTxnRequest, AddOffsetsToTxnResponse, AlterClientQuotasRequest,
-    AlterClientQuotasResponse, AlterConfigsRequest, AlterConfigsResponse,
+    AddOffsetsToTxnRequest, AddOffsetsToTxnResponse, AddRaftVoterRequest, AddRaftVoterResponse,
+    AlterClientQuotasRequest, AlterClientQuotasResponse, AlterConfigsRequest, AlterConfigsResponse,
     AlterPartitionReassignmentsRequest, AlterPartitionReassignmentsResponse,
     AlterReplicaLogDirsRequest, AlterReplicaLogDirsResponse, AlterShareGroupOffsetsRequest,
     AlterShareGroupOffsetsResponse, AlterUserScramCredentialsRequest,
-    AlterUserScramCredentialsResponse, ApiKey, ConsumerGroupDescribeRequest,
-    ConsumerGroupDescribeResponse, CreateAclsRequest, CreateAclsResponse,
-    CreateDelegationTokenRequest, CreateDelegationTokenResponse, CreatePartitionsRequest,
-    CreatePartitionsResponse, DeleteAclsRequest, DeleteAclsResponse, DeleteGroupsRequest,
-    DeleteGroupsResponse, DeleteRecordsRequest, DeleteRecordsResponse,
-    DeleteShareGroupOffsetsRequest, DeleteShareGroupOffsetsResponse, DescribeAclsRequest,
-    DescribeAclsResponse, DescribeClientQuotasRequest, DescribeClientQuotasResponse,
-    DescribeClusterRequest, DescribeClusterResponse, DescribeConfigsRequest,
-    DescribeConfigsResponse, DescribeDelegationTokenRequest, DescribeDelegationTokenResponse,
-    DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
+    AlterUserScramCredentialsResponse, ApiKey, AssignReplicasToDirsRequest,
+    AssignReplicasToDirsResponse, ConsumerGroupDescribeRequest, ConsumerGroupDescribeResponse,
+    CreateAclsRequest, CreateAclsResponse, CreateDelegationTokenRequest,
+    CreateDelegationTokenResponse, CreatePartitionsRequest, CreatePartitionsResponse,
+    DeleteAclsRequest, DeleteAclsResponse, DeleteGroupsRequest, DeleteGroupsResponse,
+    DeleteRecordsRequest, DeleteRecordsResponse, DeleteShareGroupOffsetsRequest,
+    DeleteShareGroupOffsetsResponse, DescribeAclsRequest, DescribeAclsResponse,
+    DescribeClientQuotasRequest, DescribeClientQuotasResponse, DescribeClusterRequest,
+    DescribeClusterResponse, DescribeConfigsRequest, DescribeConfigsResponse,
+    DescribeDelegationTokenRequest, DescribeDelegationTokenResponse, DescribeGroupsRequest,
+    DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
     DescribeProducersRequest, DescribeProducersResponse, DescribeQuorumRequest,
     DescribeQuorumResponse, DescribeShareGroupOffsetsRequest, DescribeShareGroupOffsetsResponse,
     DescribeTopicPartitionsRequest, DescribeTopicPartitionsResponse, DescribeTransactionsRequest,
@@ -27,18 +28,20 @@ use kafka_protocol::messages::{
     ListConfigResourcesResponse, ListGroupsRequest, ListGroupsResponse,
     ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
     ListTransactionsResponse, OffsetDeleteRequest, OffsetDeleteResponse,
-    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProducerId,
-    RenewDelegationTokenRequest, RenewDelegationTokenResponse, RequestHeader,
-    ShareGroupDescribeRequest, ShareGroupDescribeResponse, TxnOffsetCommitRequest,
+    OffsetForLeaderEpochRequest, OffsetForLeaderEpochResponse, ProducerId, RemoveRaftVoterRequest,
+    RemoveRaftVoterResponse, RenewDelegationTokenRequest, RenewDelegationTokenResponse,
+    RequestHeader, ShareGroupDescribeRequest, ShareGroupDescribeResponse, TxnOffsetCommitRequest,
     TxnOffsetCommitResponse, UnregisterBrokerRequest, UnregisterBrokerResponse,
-    UpdateFeaturesRequest, UpdateFeaturesResponse,
+    UpdateFeaturesRequest, UpdateFeaturesResponse, UpdateRaftVoterRequest, UpdateRaftVoterResponse,
 };
 use kafka_protocol::protocol::StrBytes;
+use uuid::Uuid;
 
 use super::{
-    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_CONFIGS,
-    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_ALTER_REPLICA_LOG_DIRS,
-    API_VERSION_ALTER_SHARE_GROUP_OFFSETS, API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ADD_RAFT_VOTER, API_VERSION_ALTER_CLIENT_QUOTAS,
+    API_VERSION_ALTER_CONFIGS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
+    API_VERSION_ALTER_REPLICA_LOG_DIRS, API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
+    API_VERSION_ALTER_USER_SCRAM_CREDENTIALS, API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
     API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CREATE_ACLS,
     API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
     API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
@@ -51,9 +54,10 @@ use super::{
     API_VERSION_EXPIRE_DELEGATION_TOKEN, API_VERSION_INCREMENTAL_ALTER_CONFIGS,
     API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS,
     API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS,
-    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
+    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FOR_LEADER_EPOCH, API_VERSION_REMOVE_RAFT_VOTER,
     API_VERSION_RENEW_DELEGATION_TOKEN, API_VERSION_SHARE_GROUP_DESCRIBE,
     API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER, API_VERSION_UPDATE_FEATURES,
+    API_VERSION_UPDATE_RAFT_VOTER,
 };
 
 /// Endpoint type for broker endpoints in `DescribeCluster`.
@@ -2708,6 +2712,345 @@ pub struct UnregisterBrokerResponseData {
     pub error_message: Option<String>,
 }
 
+/// A network listener used when adding or updating a `KRaft` voter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RaftVoterListener {
+    /// Listener name, such as `CONTROLLER`.
+    pub name: String,
+    /// Listener host name.
+    pub host: String,
+    /// Listener port.
+    pub port: u16,
+}
+
+impl RaftVoterListener {
+    /// Create a `KRaft` voter listener.
+    #[must_use]
+    pub fn new(name: impl Into<String>, host: impl Into<String>, port: u16) -> Self {
+        Self {
+            name: name.into(),
+            host: host.into(),
+            port,
+        }
+    }
+}
+
+/// Options for an `AddRaftVoter` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddRaftVoterOptions {
+    /// Optional cluster ID expected by the controller quorum.
+    pub cluster_id: Option<String>,
+    /// Broker-side timeout in milliseconds.
+    pub timeout_ms: i32,
+    /// Replica ID of the voter to add.
+    pub voter_id: i32,
+    /// Directory ID of the voter to add.
+    pub voter_directory_id: Uuid,
+    /// Controller listeners for the voter.
+    pub listeners: Vec<RaftVoterListener>,
+}
+
+impl AddRaftVoterOptions {
+    /// Create options for adding a `KRaft` voter.
+    #[must_use]
+    pub fn new<I>(voter_id: i32, voter_directory_id: Uuid, listeners: I) -> Self
+    where
+        I: IntoIterator<Item = RaftVoterListener>,
+    {
+        Self {
+            cluster_id: None,
+            timeout_ms: 60_000,
+            voter_id,
+            voter_directory_id,
+            listeners: listeners.into_iter().collect(),
+        }
+    }
+
+    /// Set the expected cluster ID.
+    #[must_use]
+    pub fn with_cluster_id(mut self, cluster_id: impl Into<String>) -> Self {
+        self.cluster_id = Some(cluster_id.into());
+        self
+    }
+
+    /// Clear the expected cluster ID.
+    #[must_use]
+    pub fn without_cluster_id(mut self) -> Self {
+        self.cluster_id = None;
+        self
+    }
+
+    /// Set the broker-side timeout in milliseconds.
+    #[must_use]
+    pub fn with_timeout_ms(mut self, timeout_ms: i32) -> Self {
+        self.timeout_ms = timeout_ms;
+        self
+    }
+}
+
+/// Options for a `RemoveRaftVoter` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoveRaftVoterOptions {
+    /// Optional cluster ID expected by the controller quorum.
+    pub cluster_id: Option<String>,
+    /// Replica ID of the voter to remove.
+    pub voter_id: i32,
+    /// Directory ID of the voter to remove.
+    pub voter_directory_id: Uuid,
+}
+
+impl RemoveRaftVoterOptions {
+    /// Create options for removing a `KRaft` voter.
+    #[must_use]
+    pub fn new(voter_id: i32, voter_directory_id: Uuid) -> Self {
+        Self {
+            cluster_id: None,
+            voter_id,
+            voter_directory_id,
+        }
+    }
+
+    /// Set the expected cluster ID.
+    #[must_use]
+    pub fn with_cluster_id(mut self, cluster_id: impl Into<String>) -> Self {
+        self.cluster_id = Some(cluster_id.into());
+        self
+    }
+
+    /// Clear the expected cluster ID.
+    #[must_use]
+    pub fn without_cluster_id(mut self) -> Self {
+        self.cluster_id = None;
+        self
+    }
+}
+
+/// Supported `KRaft` protocol version range for `UpdateRaftVoter`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RaftVersionFeature {
+    /// Minimum supported `KRaft` protocol version.
+    pub min_supported_version: i16,
+    /// Maximum supported `KRaft` protocol version.
+    pub max_supported_version: i16,
+}
+
+impl RaftVersionFeature {
+    /// Create a supported `KRaft` protocol version range.
+    #[must_use]
+    pub fn new(min_supported_version: i16, max_supported_version: i16) -> Self {
+        Self {
+            min_supported_version,
+            max_supported_version,
+        }
+    }
+}
+
+/// Options for an `UpdateRaftVoter` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateRaftVoterOptions {
+    /// Optional cluster ID expected by the controller quorum.
+    pub cluster_id: Option<String>,
+    /// Current leader epoch, or `-1` when unknown.
+    pub current_leader_epoch: i32,
+    /// Replica ID of the voter to update.
+    pub voter_id: i32,
+    /// Directory ID of the voter to update.
+    pub voter_directory_id: Uuid,
+    /// Controller listeners for the voter.
+    pub listeners: Vec<RaftVoterListener>,
+    /// Supported `KRaft` protocol version range.
+    pub raft_version_feature: RaftVersionFeature,
+}
+
+impl UpdateRaftVoterOptions {
+    /// Create options for updating a `KRaft` voter.
+    #[must_use]
+    pub fn new<I>(
+        voter_id: i32,
+        voter_directory_id: Uuid,
+        listeners: I,
+        raft_version_feature: RaftVersionFeature,
+    ) -> Self
+    where
+        I: IntoIterator<Item = RaftVoterListener>,
+    {
+        Self {
+            cluster_id: None,
+            current_leader_epoch: -1,
+            voter_id,
+            voter_directory_id,
+            listeners: listeners.into_iter().collect(),
+            raft_version_feature,
+        }
+    }
+
+    /// Set the expected cluster ID.
+    #[must_use]
+    pub fn with_cluster_id(mut self, cluster_id: impl Into<String>) -> Self {
+        self.cluster_id = Some(cluster_id.into());
+        self
+    }
+
+    /// Clear the expected cluster ID.
+    #[must_use]
+    pub fn without_cluster_id(mut self) -> Self {
+        self.cluster_id = None;
+        self
+    }
+
+    /// Set the current leader epoch.
+    #[must_use]
+    pub fn with_current_leader_epoch(mut self, current_leader_epoch: i32) -> Self {
+        self.current_leader_epoch = current_leader_epoch;
+        self
+    }
+}
+
+/// Parsed response from `AddRaftVoter` or `RemoveRaftVoter`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RaftVoterResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Broker error code.
+    pub error_code: i16,
+    /// Optional broker-provided error message.
+    pub error_message: Option<String>,
+}
+
+/// Current leader details returned by `UpdateRaftVoter`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RaftVoterCurrentLeader {
+    /// Replica ID of the current leader, or `-1` when unknown.
+    pub leader_id: i32,
+    /// Latest known leader epoch.
+    pub leader_epoch: i32,
+    /// Leader host name.
+    pub host: String,
+    /// Leader port.
+    pub port: i32,
+}
+
+/// Parsed response from an `UpdateRaftVoter` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateRaftVoterResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Broker error code.
+    pub error_code: i16,
+    /// Current leader details when Kafka returned the optional tagged field.
+    pub current_leader: Option<RaftVoterCurrentLeader>,
+}
+
+/// One topic assignment for `AssignReplicasToDirs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDirectoryTopicAssignment {
+    /// Topic ID to assign.
+    pub topic_id: Uuid,
+    /// Partition indexes to assign to the directory.
+    pub partitions: Vec<i32>,
+}
+
+impl ReplicaDirectoryTopicAssignment {
+    /// Create a topic assignment.
+    #[must_use]
+    pub fn new<I>(topic_id: Uuid, partitions: I) -> Self
+    where
+        I: IntoIterator<Item = i32>,
+    {
+        Self {
+            topic_id,
+            partitions: partitions.into_iter().collect(),
+        }
+    }
+}
+
+/// One directory assignment for `AssignReplicasToDirs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDirectoryAssignment {
+    /// Directory ID.
+    pub directory_id: Uuid,
+    /// Topic assignments for this directory.
+    pub topics: Vec<ReplicaDirectoryTopicAssignment>,
+}
+
+impl ReplicaDirectoryAssignment {
+    /// Create a directory assignment.
+    #[must_use]
+    pub fn new<I>(directory_id: Uuid, topics: I) -> Self
+    where
+        I: IntoIterator<Item = ReplicaDirectoryTopicAssignment>,
+    {
+        Self {
+            directory_id,
+            topics: topics.into_iter().collect(),
+        }
+    }
+}
+
+/// Options for an `AssignReplicasToDirs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignReplicasToDirsOptions {
+    /// ID of the requesting broker.
+    pub broker_id: i32,
+    /// Epoch of the requesting broker.
+    pub broker_epoch: i64,
+    /// Directory assignments to apply.
+    pub directories: Vec<ReplicaDirectoryAssignment>,
+}
+
+impl AssignReplicasToDirsOptions {
+    /// Create options for assigning replicas to log directories.
+    #[must_use]
+    pub fn new<I>(broker_id: i32, broker_epoch: i64, directories: I) -> Self
+    where
+        I: IntoIterator<Item = ReplicaDirectoryAssignment>,
+    {
+        Self {
+            broker_id,
+            broker_epoch,
+            directories: directories.into_iter().collect(),
+        }
+    }
+}
+
+/// Per-partition result from `AssignReplicasToDirs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDirectoryPartitionResult {
+    /// Partition index.
+    pub partition_index: i32,
+    /// Partition-level broker error code.
+    pub error_code: i16,
+}
+
+/// Per-topic result from `AssignReplicasToDirs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDirectoryTopicResult {
+    /// Topic ID.
+    pub topic_id: Uuid,
+    /// Per-partition results.
+    pub partitions: Vec<ReplicaDirectoryPartitionResult>,
+}
+
+/// Per-directory result from `AssignReplicasToDirs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDirectoryAssignmentResult {
+    /// Directory ID.
+    pub directory_id: Uuid,
+    /// Per-topic results.
+    pub topics: Vec<ReplicaDirectoryTopicResult>,
+}
+
+/// Parsed response from an `AssignReplicasToDirs` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignReplicasToDirsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Per-directory assignment results.
+    pub directories: Vec<ReplicaDirectoryAssignmentResult>,
+}
+
 /// A partition offset to alter for a share group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterShareGroupOffsetPartition {
@@ -4387,6 +4730,142 @@ pub fn build_unregister_broker_request(
     (header, request)
 }
 
+/// Build an `AssignReplicasToDirs` request.
+pub fn build_assign_replicas_to_dirs_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &AssignReplicasToDirsOptions,
+) -> (RequestHeader, AssignReplicasToDirsRequest) {
+    use kafka_protocol::messages::assign_replicas_to_dirs_request::{
+        DirectoryData as KpDirectoryData, PartitionData as KpPartitionData,
+        TopicData as KpTopicData,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AssignReplicasToDirs,
+        API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
+    );
+    let directories: Vec<KpDirectoryData> = options
+        .directories
+        .iter()
+        .map(|directory| {
+            let topics: Vec<KpTopicData> = directory
+                .topics
+                .iter()
+                .map(|topic| {
+                    let partitions: Vec<KpPartitionData> = topic
+                        .partitions
+                        .iter()
+                        .copied()
+                        .map(|partition_index| {
+                            KpPartitionData::default().with_partition_index(partition_index)
+                        })
+                        .collect();
+                    KpTopicData::default()
+                        .with_topic_id(topic.topic_id)
+                        .with_partitions(partitions)
+                })
+                .collect();
+            KpDirectoryData::default()
+                .with_id(directory.directory_id)
+                .with_topics(topics)
+        })
+        .collect();
+    let request = AssignReplicasToDirsRequest::default()
+        .with_broker_id(kafka_protocol::messages::BrokerId::from(options.broker_id))
+        .with_broker_epoch(options.broker_epoch)
+        .with_directories(directories);
+
+    (header, request)
+}
+
+/// Build an `AddRaftVoter` request.
+pub fn build_add_raft_voter_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &AddRaftVoterOptions,
+) -> (RequestHeader, AddRaftVoterRequest) {
+    use kafka_protocol::messages::add_raft_voter_request::Listener as KpListener;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::AddRaftVoter,
+        API_VERSION_ADD_RAFT_VOTER,
+    );
+    let listeners: Vec<KpListener> = options.listeners.iter().map(to_add_raft_listener).collect();
+    let request = AddRaftVoterRequest::default()
+        .with_cluster_id(optional_str_bytes(options.cluster_id.as_deref()))
+        .with_timeout_ms(options.timeout_ms)
+        .with_voter_id(options.voter_id)
+        .with_voter_directory_id(options.voter_directory_id)
+        .with_listeners(listeners);
+
+    (header, request)
+}
+
+/// Build a `RemoveRaftVoter` request.
+pub fn build_remove_raft_voter_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &RemoveRaftVoterOptions,
+) -> (RequestHeader, RemoveRaftVoterRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::RemoveRaftVoter,
+        API_VERSION_REMOVE_RAFT_VOTER,
+    );
+    let request = RemoveRaftVoterRequest::default()
+        .with_cluster_id(optional_str_bytes(options.cluster_id.as_deref()))
+        .with_voter_id(options.voter_id)
+        .with_voter_directory_id(options.voter_directory_id);
+
+    (header, request)
+}
+
+/// Build an `UpdateRaftVoter` request.
+pub fn build_update_raft_voter_request(
+    correlation_id: i32,
+    client_id: &str,
+    options: &UpdateRaftVoterOptions,
+) -> (RequestHeader, UpdateRaftVoterRequest) {
+    use kafka_protocol::messages::update_raft_voter_request::{
+        KRaftVersionFeature as KpKRaftVersionFeature, Listener as KpListener,
+    };
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::UpdateRaftVoter,
+        API_VERSION_UPDATE_RAFT_VOTER,
+    );
+    let listeners: Vec<KpListener> = options
+        .listeners
+        .iter()
+        .map(|listener| {
+            KpListener::default()
+                .with_name(StrBytes::from_string(listener.name.clone()))
+                .with_host(StrBytes::from_string(listener.host.clone()))
+                .with_port(listener.port)
+        })
+        .collect();
+    let version_feature = KpKRaftVersionFeature::default()
+        .with_min_supported_version(options.raft_version_feature.min_supported_version)
+        .with_max_supported_version(options.raft_version_feature.max_supported_version);
+    let request = UpdateRaftVoterRequest::default()
+        .with_cluster_id(optional_str_bytes(options.cluster_id.as_deref()))
+        .with_current_leader_epoch(options.current_leader_epoch)
+        .with_voter_id(options.voter_id)
+        .with_voter_directory_id(options.voter_directory_id)
+        .with_listeners(listeners)
+        .with_k_raft_version_feature(version_feature);
+
+    (header, request)
+}
+
 /// Build an `AlterShareGroupOffsets` request.
 pub fn build_alter_share_group_offsets_request(
     correlation_id: i32,
@@ -5599,6 +6078,83 @@ pub fn convert_unregister_broker_response(
     }
 }
 
+/// Convert a generated `AssignReplicasToDirsResponse` into the crate's public shape.
+pub fn convert_assign_replicas_to_dirs_response(
+    response: AssignReplicasToDirsResponse,
+) -> AssignReplicasToDirsResponseData {
+    AssignReplicasToDirsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        directories: response
+            .directories
+            .into_iter()
+            .map(|directory| ReplicaDirectoryAssignmentResult {
+                directory_id: directory.id,
+                topics: directory
+                    .topics
+                    .into_iter()
+                    .map(|topic| ReplicaDirectoryTopicResult {
+                        topic_id: topic.topic_id,
+                        partitions: topic
+                            .partitions
+                            .into_iter()
+                            .map(|partition| ReplicaDirectoryPartitionResult {
+                                partition_index: partition.partition_index,
+                                error_code: partition.error_code,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a generated `AddRaftVoterResponse` into the crate's public shape.
+pub fn convert_add_raft_voter_response(response: AddRaftVoterResponse) -> RaftVoterResponseData {
+    RaftVoterResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|m| m.to_string()),
+    }
+}
+
+/// Convert a generated `RemoveRaftVoterResponse` into the crate's public shape.
+pub fn convert_remove_raft_voter_response(
+    response: RemoveRaftVoterResponse,
+) -> RaftVoterResponseData {
+    RaftVoterResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|m| m.to_string()),
+    }
+}
+
+/// Convert a generated `UpdateRaftVoterResponse` into the crate's public shape.
+pub fn convert_update_raft_voter_response(
+    response: UpdateRaftVoterResponse,
+) -> UpdateRaftVoterResponseData {
+    let current_leader = response.current_leader;
+    let current_leader = if current_leader
+        == kafka_protocol::messages::update_raft_voter_response::CurrentLeader::default()
+    {
+        None
+    } else {
+        Some(RaftVoterCurrentLeader {
+            leader_id: i32::from(current_leader.leader_id),
+            leader_epoch: current_leader.leader_epoch,
+            host: current_leader.host.to_string(),
+            port: current_leader.port,
+        })
+    };
+
+    UpdateRaftVoterResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        current_leader,
+    }
+}
+
 /// Convert a generated `AlterShareGroupOffsetsResponse` into the crate's public shape.
 pub fn convert_alter_share_group_offsets_response(
     response: AlterShareGroupOffsetsResponse,
@@ -5659,6 +6215,19 @@ fn request_header(
         .with_correlation_id(correlation_id)
 }
 
+fn optional_str_bytes(value: Option<&str>) -> Option<StrBytes> {
+    value.map(|value| StrBytes::from_string(value.to_owned()))
+}
+
+fn to_add_raft_listener(
+    listener: &RaftVoterListener,
+) -> kafka_protocol::messages::add_raft_voter_request::Listener {
+    kafka_protocol::messages::add_raft_voter_request::Listener::default()
+        .with_name(StrBytes::from_string(listener.name.clone()))
+        .with_host(StrBytes::from_string(listener.host.clone()))
+        .with_port(listener.port)
+}
+
 fn str_bytes_vec(values: &[&str]) -> Vec<StrBytes> {
     values
         .iter()
@@ -5690,6 +6259,10 @@ mod tests {
         AlterReplicaLogDirTopicResult as KpAlterReplicaLogDirTopicResult,
     };
     use kafka_protocol::messages::alter_user_scram_credentials_response::AlterUserScramCredentialsResult as KpAlterUserScramCredentialsResult;
+    use kafka_protocol::messages::assign_replicas_to_dirs_response::{
+        DirectoryData as KpAssignDirectoryResult, PartitionData as KpAssignPartitionResult,
+        TopicData as KpAssignTopicResult,
+    };
     use kafka_protocol::messages::consumer_group_describe_response::{
         Assignment as KpConsumerGroupAssignment, DescribedGroup as KpConsumerGroupDescription,
         Member as KpConsumerGroupMember, TopicPartitions as KpConsumerGroupTopicPartitions,
@@ -5781,6 +6354,7 @@ mod tests {
     };
     use kafka_protocol::messages::unregister_broker_response::UnregisterBrokerResponse as KpUnregisterBrokerResponse;
     use kafka_protocol::messages::update_features_response::UpdatableFeatureResult as KpUpdatableFeatureResult;
+    use kafka_protocol::messages::update_raft_voter_response::CurrentLeader as KpRaftCurrentLeader;
     use kafka_protocol::messages::{BrokerId, ProducerId};
 
     #[test]
@@ -8053,6 +8627,111 @@ mod tests {
     }
 
     #[test]
+    fn assign_replicas_to_dirs_request_preserves_directory_topic_partitions() {
+        let directory_id = Uuid::from_u128(1);
+        let topic_id = Uuid::from_u128(2);
+        let options = AssignReplicasToDirsOptions::new(
+            7,
+            99,
+            [ReplicaDirectoryAssignment::new(
+                directory_id,
+                [ReplicaDirectoryTopicAssignment::new(topic_id, [0, 2, 4])],
+            )],
+        );
+        let (header, request) = build_assign_replicas_to_dirs_request(100, "client-c", &options);
+
+        assert_eq!(header.request_api_key, ApiKey::AssignReplicasToDirs as i16);
+        assert_eq!(
+            header.request_api_version,
+            API_VERSION_ASSIGN_REPLICAS_TO_DIRS
+        );
+        assert_eq!(header.correlation_id, 100);
+        assert_eq!(i32::from(request.broker_id), 7);
+        assert_eq!(request.broker_epoch, 99);
+        assert_eq!(request.directories[0].id, directory_id);
+        assert_eq!(request.directories[0].topics[0].topic_id, topic_id);
+        assert_eq!(
+            request.directories[0].topics[0]
+                .partitions
+                .iter()
+                .map(|partition| partition.partition_index)
+                .collect::<Vec<_>>(),
+            vec![0, 2, 4]
+        );
+    }
+
+    #[test]
+    fn raft_voter_requests_preserve_cluster_listener_and_version_fields() {
+        let directory_id = Uuid::from_u128(3);
+        let listener = RaftVoterListener::new("CONTROLLER", "controller-1", 9093);
+
+        let add = AddRaftVoterOptions::new(11, directory_id, [listener.clone()])
+            .with_cluster_id("cluster-a")
+            .with_timeout_ms(30_000);
+        let (add_header, add_request) = build_add_raft_voter_request(101, "client-d", &add);
+        assert_eq!(add_header.request_api_key, ApiKey::AddRaftVoter as i16);
+        assert_eq!(add_header.request_api_version, API_VERSION_ADD_RAFT_VOTER);
+        assert_eq!(
+            add_request.cluster_id.as_ref().map(ToString::to_string),
+            Some("cluster-a".to_owned())
+        );
+        assert_eq!(add_request.timeout_ms, 30_000);
+        assert_eq!(add_request.voter_id, 11);
+        assert_eq!(add_request.voter_directory_id, directory_id);
+        assert_eq!(add_request.listeners[0].name.to_string(), "CONTROLLER");
+        assert_eq!(add_request.listeners[0].host.to_string(), "controller-1");
+        assert_eq!(add_request.listeners[0].port, 9093);
+
+        let remove = RemoveRaftVoterOptions::new(11, directory_id).with_cluster_id("cluster-a");
+        let (remove_header, remove_request) =
+            build_remove_raft_voter_request(102, "client-e", &remove);
+        assert_eq!(
+            remove_header.request_api_key,
+            ApiKey::RemoveRaftVoter as i16
+        );
+        assert_eq!(
+            remove_header.request_api_version,
+            API_VERSION_REMOVE_RAFT_VOTER
+        );
+        assert_eq!(
+            remove_request.cluster_id.as_ref().map(ToString::to_string),
+            Some("cluster-a".to_owned())
+        );
+        assert_eq!(remove_request.voter_id, 11);
+        assert_eq!(remove_request.voter_directory_id, directory_id);
+
+        let update = UpdateRaftVoterOptions::new(
+            11,
+            directory_id,
+            [listener],
+            RaftVersionFeature::new(1, 3),
+        )
+        .with_cluster_id("cluster-a")
+        .with_current_leader_epoch(5);
+        let (update_header, update_request) =
+            build_update_raft_voter_request(103, "client-f", &update);
+        assert_eq!(
+            update_header.request_api_key,
+            ApiKey::UpdateRaftVoter as i16
+        );
+        assert_eq!(
+            update_header.request_api_version,
+            API_VERSION_UPDATE_RAFT_VOTER
+        );
+        assert_eq!(update_request.current_leader_epoch, 5);
+        assert_eq!(update_request.voter_id, 11);
+        assert_eq!(update_request.voter_directory_id, directory_id);
+        assert_eq!(
+            update_request.k_raft_version_feature.min_supported_version,
+            1
+        );
+        assert_eq!(
+            update_request.k_raft_version_feature.max_supported_version,
+            3
+        );
+    }
+
+    #[test]
     fn update_features_response_maps_all_fields() {
         let response = UpdateFeaturesResponse::default()
             .with_throttle_time_ms(50)
@@ -8095,6 +8774,109 @@ mod tests {
         assert_eq!(converted.throttle_time_ms, 100);
         assert_eq!(converted.error_code, 0);
         assert_eq!(converted.error_message, Some("unregistered".to_owned()));
+    }
+
+    #[test]
+    fn assign_replicas_to_dirs_response_maps_nested_results() {
+        let directory_id = Uuid::from_u128(4);
+        let topic_id = Uuid::from_u128(5);
+        let response = AssignReplicasToDirsResponse::default()
+            .with_throttle_time_ms(10)
+            .with_error_code(0)
+            .with_directories(vec![
+                KpAssignDirectoryResult::default()
+                    .with_id(directory_id)
+                    .with_topics(vec![
+                        KpAssignTopicResult::default()
+                            .with_topic_id(topic_id)
+                            .with_partitions(vec![
+                                KpAssignPartitionResult::default()
+                                    .with_partition_index(0)
+                                    .with_error_code(0),
+                                KpAssignPartitionResult::default()
+                                    .with_partition_index(1)
+                                    .with_error_code(42),
+                            ]),
+                    ]),
+            ]);
+
+        let converted = convert_assign_replicas_to_dirs_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 10);
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.directories[0].directory_id, directory_id);
+        assert_eq!(converted.directories[0].topics[0].topic_id, topic_id);
+        assert_eq!(
+            converted.directories[0].topics[0].partitions,
+            vec![
+                ReplicaDirectoryPartitionResult {
+                    partition_index: 0,
+                    error_code: 0
+                },
+                ReplicaDirectoryPartitionResult {
+                    partition_index: 1,
+                    error_code: 42
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn raft_voter_responses_map_errors_and_optional_current_leader() {
+        let add = AddRaftVoterResponse::default()
+            .with_throttle_time_ms(11)
+            .with_error_code(3)
+            .with_error_message(Some(StrBytes::from_static_str("add-failed")));
+        let remove = RemoveRaftVoterResponse::default()
+            .with_throttle_time_ms(12)
+            .with_error_code(4)
+            .with_error_message(None);
+
+        assert_eq!(
+            convert_add_raft_voter_response(add),
+            RaftVoterResponseData {
+                throttle_time_ms: 11,
+                error_code: 3,
+                error_message: Some("add-failed".to_owned())
+            }
+        );
+        assert_eq!(
+            convert_remove_raft_voter_response(remove),
+            RaftVoterResponseData {
+                throttle_time_ms: 12,
+                error_code: 4,
+                error_message: None
+            }
+        );
+
+        let without_leader = UpdateRaftVoterResponse::default()
+            .with_throttle_time_ms(13)
+            .with_error_code(5);
+        let converted_without_leader = convert_update_raft_voter_response(without_leader);
+        assert_eq!(converted_without_leader.throttle_time_ms, 13);
+        assert_eq!(converted_without_leader.error_code, 5);
+        assert_eq!(converted_without_leader.current_leader, None);
+
+        let with_leader = UpdateRaftVoterResponse::default()
+            .with_throttle_time_ms(14)
+            .with_error_code(0)
+            .with_current_leader(
+                KpRaftCurrentLeader::default()
+                    .with_leader_id(BrokerId::from(1))
+                    .with_leader_epoch(9)
+                    .with_host(StrBytes::from_static_str("controller-1"))
+                    .with_port(9093),
+            );
+        let converted_with_leader = convert_update_raft_voter_response(with_leader);
+        assert_eq!(
+            converted_with_leader.current_leader,
+            Some(RaftVoterCurrentLeader {
+                leader_id: 1,
+                leader_epoch: 9,
+                host: "controller-1".to_owned(),
+                port: 9093
+            })
+        );
     }
 
     #[test]

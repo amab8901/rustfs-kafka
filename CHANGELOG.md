@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `alter_replica_log_dirs`
   - `update_features`
   - `unregister_broker`
+  - `assign_replicas_to_dirs`
+  - `add_raft_voter` / `remove_raft_voter` / `update_raft_voter`
   - `list_groups` / `list_groups_with_filters`
   - `delete_groups`
   - `describe_groups` / `describe_groups_with_options`
@@ -56,7 +58,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   leader election, leader-epoch offset lookup, client quotas, client quota mutation results, SCRAM credential metadata,
   SCRAM credential mutation results, active producers, transactions, transactional offset commit results,
   committed-offset deletion results, modern consumer group descriptions, share group descriptions, share group offsets,
-  share group offset mutation results, cluster feature updates, and KRaft broker lifecycle operations.
+  share group offset mutation results, cluster feature updates, KRaft broker lifecycle/voter operations, and replica
+  directory assignment results.
 - `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
 - Added `docs/protocol-coverage.md` to track `kafka-protocol` `0.18.0` API coverage and prioritize remaining
   client-facing protocol work.

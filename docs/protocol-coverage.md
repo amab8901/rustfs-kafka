@@ -15,11 +15,11 @@ Source checked:
 ## Coverage Summary
 
 - Total `kafka-protocol` API keys: 87.
-- Public or high-level runtime coverage: 52 APIs.
+- Public or high-level runtime coverage: 56 APIs.
 - Internal runtime coverage without direct public API: 10 APIs.
 - Client-facing backlog: 0 APIs.
 - Advanced runtime backlog: 7 APIs (share-consumer and telemetry subsystems).
-- Broker/controller/internal backlog: 18 APIs (quorum, coordinator, KRaft internals).
+- Broker/controller/internal backlog: 14 APIs (quorum, coordinator, KRaft internals).
 
 ## API Matrix
 
@@ -94,16 +94,16 @@ Source checked:
 | 70 | ControllerRegistration | Missing controller-internal API | Do not expose as normal client API. |
 | 71 | GetTelemetrySubscriptions | Missing client telemetry runtime API | Add only with a telemetry subsystem. |
 | 72 | PushTelemetry | Missing client telemetry runtime API | Add only with a telemetry subsystem. |
-| 73 | AssignReplicasToDirs | Missing broker storage admin API | Add only with JBOD/directory-assignment workflow. |
+| 73 | AssignReplicasToDirs | Public broker storage admin implemented | Done; use only with explicit JBOD/directory-assignment workflow. |
 | 74 | ListConfigResources | Public admin implemented | Done. |
 | 75 | DescribeTopicPartitions | Public diagnostic implemented | Done. |
 | 76 | ShareGroupHeartbeat | Missing advanced share-consumer runtime API | Add as part of full share-consumer runtime. |
 | 77 | ShareGroupDescribe | Public diagnostic implemented | Done. |
 | 78 | ShareFetch | Missing advanced share-consumer runtime API | Add as part of full share-consumer runtime. |
 | 79 | ShareAcknowledge | Missing advanced share-consumer runtime API | Add as part of full share-consumer runtime. |
-| 80 | AddRaftVoter | Missing quorum admin/internal API | Expose only with explicit KRaft admin scope. |
-| 81 | RemoveRaftVoter | Missing quorum admin/internal API | Expose only with explicit KRaft admin scope. |
-| 82 | UpdateRaftVoter | Missing quorum admin/internal API | Expose only with explicit KRaft admin scope. |
+| 80 | AddRaftVoter | Public KRaft quorum admin implemented | Done; explicit KRaft voter workflow only. |
+| 81 | RemoveRaftVoter | Public KRaft quorum admin implemented | Done; explicit KRaft voter workflow only. |
+| 82 | UpdateRaftVoter | Public KRaft quorum admin implemented | Done; explicit KRaft voter workflow only. |
 | 83 | InitializeShareGroupState | Missing share coordinator internal API | Do not expose as normal client API. |
 | 84 | ReadShareGroupState | Missing share coordinator internal API | Do not expose as normal client API. |
 | 85 | WriteShareGroupState | Missing share coordinator internal API | Do not expose as normal client API. |
@@ -120,5 +120,4 @@ runtime subsystems or internal-only protocols:
 
 1. Share consumer runtime: `ConsumerGroupHeartbeat`, `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge`.
 2. Telemetry runtime: `GetTelemetrySubscriptions`, `PushTelemetry`.
-3. Explicitly scoped KRaft/JBOD admin: `AssignReplicasToDirs`, `AddRaftVoter`, `RemoveRaftVoter`, `UpdateRaftVoter`.
-4. Keep broker, controller, coordinator, and raft-log internals unexposed unless a dedicated controller client is introduced.
+3. Keep broker, controller, coordinator, and raft-log internals unexposed unless a dedicated controller client is introduced.

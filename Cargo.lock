@@ -1003,6 +1003,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "twox-hash",
+ "uuid",
  "webpki-roots",
 ]
 
@@ -1025,6 +1026,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "webpki-roots",
 ]
 
