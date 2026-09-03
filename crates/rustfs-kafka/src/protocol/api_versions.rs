@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
+    API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
     API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
     API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
     API_VERSION_FETCH, API_VERSION_FIND_COORDINATOR, API_VERSION_LIST_GROUPS,
@@ -33,8 +34,10 @@ pub mod api_key {
     pub const DESCRIBE_GROUPS: i16 = 15;
     pub const LIST_GROUPS: i16 = 16;
     pub const API_VERSIONS: i16 = 18;
+    pub const DESCRIBE_ACLS: i16 = 29;
     pub const DESCRIBE_CONFIGS: i16 = 32;
     pub const DESCRIBE_LOG_DIRS: i16 = 35;
+    pub const DESCRIBE_DELEGATION_TOKEN: i16 = 41;
     pub const LIST_PARTITION_REASSIGNMENTS: i16 = 46;
     pub const DESCRIBE_CLIENT_QUOTAS: i16 = 48;
     pub const DESCRIBE_USER_SCRAM_CREDENTIALS: i16 = 50;
@@ -308,8 +311,10 @@ impl ApiVersionCache {
             api_key::OFFSET_FETCH => API_VERSION_OFFSET_FETCH,
             api_key::DESCRIBE_GROUPS => API_VERSION_DESCRIBE_GROUPS,
             api_key::LIST_GROUPS => API_VERSION_LIST_GROUPS,
+            api_key::DESCRIBE_ACLS => API_VERSION_DESCRIBE_ACLS,
             api_key::DESCRIBE_CONFIGS => API_VERSION_DESCRIBE_CONFIGS,
             api_key::DESCRIBE_LOG_DIRS => API_VERSION_DESCRIBE_LOG_DIRS,
+            api_key::DESCRIBE_DELEGATION_TOKEN => API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             api_key::LIST_PARTITION_REASSIGNMENTS => API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             api_key::DESCRIBE_CLIENT_QUOTAS => API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             api_key::DESCRIBE_USER_SCRAM_CREDENTIALS => API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
@@ -339,100 +344,45 @@ pub fn resolve_api_version(cache: &ApiVersionCache, host: &str, api_key: i16, de
 /// Resolve all our API versions for a given broker.
 #[allow(dead_code)]
 pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersions {
+    macro_rules! version {
+        ($api_key:ident, $default:ident) => {
+            resolve_api_version(cache, host, api_key::$api_key, $default)
+        };
+    }
+
     ApiVersions {
-        produce: resolve_api_version(cache, host, api_key::PRODUCE, API_VERSION_PRODUCE),
-        fetch: resolve_api_version(cache, host, api_key::FETCH, API_VERSION_FETCH),
-        metadata: resolve_api_version(cache, host, api_key::METADATA, API_VERSION_METADATA),
-        list_offsets: resolve_api_version(
-            cache,
-            host,
-            api_key::LIST_OFFSETS,
-            API_VERSION_LIST_OFFSETS,
+        produce: version!(PRODUCE, API_VERSION_PRODUCE),
+        fetch: version!(FETCH, API_VERSION_FETCH),
+        metadata: version!(METADATA, API_VERSION_METADATA),
+        list_offsets: version!(LIST_OFFSETS, API_VERSION_LIST_OFFSETS),
+        find_coordinator: version!(FIND_COORDINATOR, API_VERSION_FIND_COORDINATOR),
+        offset_commit: version!(OFFSET_COMMIT, API_VERSION_OFFSET_COMMIT),
+        offset_fetch: version!(OFFSET_FETCH, API_VERSION_OFFSET_FETCH),
+        describe_groups: version!(DESCRIBE_GROUPS, API_VERSION_DESCRIBE_GROUPS),
+        list_groups: version!(LIST_GROUPS, API_VERSION_LIST_GROUPS),
+        describe_acls: version!(DESCRIBE_ACLS, API_VERSION_DESCRIBE_ACLS),
+        describe_configs: version!(DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_CONFIGS),
+        describe_log_dirs: version!(DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_LOG_DIRS),
+        describe_delegation_token: version!(
+            DESCRIBE_DELEGATION_TOKEN,
+            API_VERSION_DESCRIBE_DELEGATION_TOKEN
         ),
-        find_coordinator: resolve_api_version(
-            cache,
-            host,
-            api_key::FIND_COORDINATOR,
-            API_VERSION_FIND_COORDINATOR,
+        list_partition_reassignments: version!(
+            LIST_PARTITION_REASSIGNMENTS,
+            API_VERSION_LIST_PARTITION_REASSIGNMENTS
         ),
-        offset_commit: resolve_api_version(
-            cache,
-            host,
-            api_key::OFFSET_COMMIT,
-            API_VERSION_OFFSET_COMMIT,
+        describe_client_quotas: version!(
+            DESCRIBE_CLIENT_QUOTAS,
+            API_VERSION_DESCRIBE_CLIENT_QUOTAS
         ),
-        offset_fetch: resolve_api_version(
-            cache,
-            host,
-            api_key::OFFSET_FETCH,
-            API_VERSION_OFFSET_FETCH,
+        describe_user_scram_credentials: version!(
+            DESCRIBE_USER_SCRAM_CREDENTIALS,
+            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         ),
-        describe_groups: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_GROUPS,
-            API_VERSION_DESCRIBE_GROUPS,
-        ),
-        list_groups: resolve_api_version(
-            cache,
-            host,
-            api_key::LIST_GROUPS,
-            API_VERSION_LIST_GROUPS,
-        ),
-        describe_configs: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_CONFIGS,
-            API_VERSION_DESCRIBE_CONFIGS,
-        ),
-        describe_log_dirs: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_LOG_DIRS,
-            API_VERSION_DESCRIBE_LOG_DIRS,
-        ),
-        list_partition_reassignments: resolve_api_version(
-            cache,
-            host,
-            api_key::LIST_PARTITION_REASSIGNMENTS,
-            API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-        ),
-        describe_client_quotas: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_CLIENT_QUOTAS,
-            API_VERSION_DESCRIBE_CLIENT_QUOTAS,
-        ),
-        describe_user_scram_credentials: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_USER_SCRAM_CREDENTIALS,
-            API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-        ),
-        describe_cluster: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_CLUSTER,
-            API_VERSION_DESCRIBE_CLUSTER,
-        ),
-        describe_producers: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_PRODUCERS,
-            API_VERSION_DESCRIBE_PRODUCERS,
-        ),
-        describe_transactions: resolve_api_version(
-            cache,
-            host,
-            api_key::DESCRIBE_TRANSACTIONS,
-            API_VERSION_DESCRIBE_TRANSACTIONS,
-        ),
-        list_transactions: resolve_api_version(
-            cache,
-            host,
-            api_key::LIST_TRANSACTIONS,
-            API_VERSION_LIST_TRANSACTIONS,
-        ),
+        describe_cluster: version!(DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CLUSTER),
+        describe_producers: version!(DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_PRODUCERS),
+        describe_transactions: version!(DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_TRANSACTIONS),
+        list_transactions: version!(LIST_TRANSACTIONS, API_VERSION_LIST_TRANSACTIONS),
     }
 }
 
@@ -449,8 +399,10 @@ pub struct ApiVersions {
     pub offset_fetch: i16,
     pub describe_groups: i16,
     pub list_groups: i16,
+    pub describe_acls: i16,
     pub describe_configs: i16,
     pub describe_log_dirs: i16,
+    pub describe_delegation_token: i16,
     pub list_partition_reassignments: i16,
     pub describe_client_quotas: i16,
     pub describe_user_scram_credentials: i16,
@@ -472,8 +424,10 @@ impl Default for ApiVersions {
             offset_fetch: API_VERSION_OFFSET_FETCH,
             describe_groups: API_VERSION_DESCRIBE_GROUPS,
             list_groups: API_VERSION_LIST_GROUPS,
+            describe_acls: API_VERSION_DESCRIBE_ACLS,
             describe_configs: API_VERSION_DESCRIBE_CONFIGS,
             describe_log_dirs: API_VERSION_DESCRIBE_LOG_DIRS,
+            describe_delegation_token: API_VERSION_DESCRIBE_DELEGATION_TOKEN,
             list_partition_reassignments: API_VERSION_LIST_PARTITION_REASSIGNMENTS,
             describe_client_quotas: API_VERSION_DESCRIBE_CLIENT_QUOTAS,
             describe_user_scram_credentials: API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
@@ -619,8 +573,13 @@ mod tests {
         assert_eq!(v.offset_fetch, API_VERSION_OFFSET_FETCH);
         assert_eq!(v.describe_groups, API_VERSION_DESCRIBE_GROUPS);
         assert_eq!(v.list_groups, API_VERSION_LIST_GROUPS);
+        assert_eq!(v.describe_acls, API_VERSION_DESCRIBE_ACLS);
         assert_eq!(v.describe_configs, API_VERSION_DESCRIBE_CONFIGS);
         assert_eq!(v.describe_log_dirs, API_VERSION_DESCRIBE_LOG_DIRS);
+        assert_eq!(
+            v.describe_delegation_token,
+            API_VERSION_DESCRIBE_DELEGATION_TOKEN
+        );
         assert_eq!(
             v.list_partition_reassignments,
             API_VERSION_LIST_PARTITION_REASSIGNMENTS
@@ -650,8 +609,10 @@ mod tests {
         assert_eq!(v.offset_fetch, d.offset_fetch);
         assert_eq!(v.describe_groups, d.describe_groups);
         assert_eq!(v.list_groups, d.list_groups);
+        assert_eq!(v.describe_acls, d.describe_acls);
         assert_eq!(v.describe_configs, d.describe_configs);
         assert_eq!(v.describe_log_dirs, d.describe_log_dirs);
+        assert_eq!(v.describe_delegation_token, d.describe_delegation_token);
         assert_eq!(
             v.list_partition_reassignments,
             d.list_partition_reassignments
@@ -706,12 +667,20 @@ mod tests {
             API_VERSION_LIST_GROUPS
         );
         assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_ACLS),
+            API_VERSION_DESCRIBE_ACLS
+        );
+        assert_eq!(
             ApiVersionCache::fallback_version(api_key::DESCRIBE_CONFIGS),
             API_VERSION_DESCRIBE_CONFIGS
         );
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::DESCRIBE_LOG_DIRS),
             API_VERSION_DESCRIBE_LOG_DIRS
+        );
+        assert_eq!(
+            ApiVersionCache::fallback_version(api_key::DESCRIBE_DELEGATION_TOKEN),
+            API_VERSION_DESCRIBE_DELEGATION_TOKEN
         );
         assert_eq!(
             ApiVersionCache::fallback_version(api_key::LIST_PARTITION_REASSIGNMENTS),

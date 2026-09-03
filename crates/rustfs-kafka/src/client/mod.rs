@@ -11,9 +11,9 @@
 //! - **Metadata queries** via `load_metadata_all()` / `load_metadata()`
 //! - **Offset management** via `fetch_offsets()` / `commit_offsets()`
 //! - **Topic management** via `create_topics()` / `delete_topics()`
-//! - **Cluster, config, quota, SCRAM credential, broker storage, producer, transaction, API version, and group inspection** via
-//!   `describe_cluster()` / `describe_configs()` / `describe_log_dirs()` /
-//!   `describe_client_quotas()` / `describe_user_scram_credentials()` /
+//! - **Cluster, ACL, config, token, quota, SCRAM credential, broker storage, producer, transaction, API version, and group inspection** via
+//!   `describe_cluster()` / `describe_acls()` / `describe_configs()` / `describe_log_dirs()` /
+//!   `describe_delegation_tokens()` / `describe_client_quotas()` / `describe_user_scram_credentials()` /
 //!   `describe_producers()` / `list_transactions()` / `fetch_api_versions()` /
 //!   `list_groups()` / `describe_groups()`
 //!
@@ -51,18 +51,29 @@
 // pub re-exports
 pub use crate::compression::Compression;
 pub use crate::protocol::admin::{
+    ACL_OPERATION_ALL, ACL_OPERATION_ALTER, ACL_OPERATION_ALTER_CONFIGS, ACL_OPERATION_ANY,
+    ACL_OPERATION_CLUSTER_ACTION, ACL_OPERATION_CREATE, ACL_OPERATION_CREATE_TOKENS,
+    ACL_OPERATION_DELETE, ACL_OPERATION_DESCRIBE, ACL_OPERATION_DESCRIBE_CONFIGS,
+    ACL_OPERATION_DESCRIBE_TOKENS, ACL_OPERATION_IDEMPOTENT_WRITE, ACL_OPERATION_READ,
+    ACL_OPERATION_WRITE, ACL_PATTERN_TYPE_ANY, ACL_PATTERN_TYPE_LITERAL, ACL_PATTERN_TYPE_MATCH,
+    ACL_PATTERN_TYPE_PREFIXED, ACL_PERMISSION_TYPE_ALLOW, ACL_PERMISSION_TYPE_ANY,
+    ACL_PERMISSION_TYPE_DENY, ACL_RESOURCE_TYPE_ANY, ACL_RESOURCE_TYPE_CLUSTER,
+    ACL_RESOURCE_TYPE_DELEGATION_TOKEN, ACL_RESOURCE_TYPE_GROUP, ACL_RESOURCE_TYPE_TOPIC,
+    ACL_RESOURCE_TYPE_TRANSACTIONAL_ID, ACL_RESOURCE_TYPE_USER, AclDescription, AclResource,
     ActiveProducer, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
     CLIENT_QUOTA_MATCH_EXACT, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntry,
     ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
+    DelegationTokenDescription, DescribeAclsFilter, DescribeAclsResponseData,
     DescribeClientQuotasOptions, DescribeClientQuotasResponseData, DescribeClusterResponseData,
-    DescribeConfigsResponseData, DescribeConfigsResult, DescribeGroupsResponseData,
-    DescribeLogDirsResponseData, DescribeProducersResponseData, DescribeTransactionsResponseData,
-    DescribeUserScramCredentialsResponseData, DescribedGroup, DescribedGroupMember,
-    DescribedTransaction, ListGroupsResponseData, ListPartitionReassignmentsResponseData,
-    ListTransactionsOptions, ListTransactionsResponseData, ListedGroup, ListedTransaction,
-    LogDirDescription, LogDirPartition, LogDirTopic, PartitionReassignment, ProducerPartition,
-    ProducerTopic, SCRAM_MECHANISM_SHA_256, SCRAM_MECHANISM_SHA_512, ScramCredentialInfo,
-    TopicPartitionFilter, TopicReassignment, TransactionTopic, UserScramCredentialsDescription,
+    DescribeConfigsResponseData, DescribeConfigsResult, DescribeDelegationTokenResponseData,
+    DescribeGroupsResponseData, DescribeLogDirsResponseData, DescribeProducersResponseData,
+    DescribeTransactionsResponseData, DescribeUserScramCredentialsResponseData, DescribedGroup,
+    DescribedGroupMember, DescribedTransaction, KafkaPrincipal, ListGroupsResponseData,
+    ListPartitionReassignmentsResponseData, ListTransactionsOptions, ListTransactionsResponseData,
+    ListedGroup, ListedTransaction, LogDirDescription, LogDirPartition, LogDirTopic,
+    PartitionReassignment, ProducerPartition, ProducerTopic, SCRAM_MECHANISM_SHA_256,
+    SCRAM_MECHANISM_SHA_512, ScramCredentialInfo, TopicPartitionFilter, TopicReassignment,
+    TransactionTopic, UserScramCredentialsDescription,
 };
 pub use crate::protocol::api_versions::{ApiVersionsResponseData, BrokerApiVersion};
 pub use crate::protocol::create_topics::{CreateTopicsResponseData, TopicConfig, TopicResult};
@@ -862,6 +873,67 @@ impl KafkaClient {
         Err(last_err.unwrap_or_else(Error::no_host_reachable))
     }
 
+    /// Describes ACLs visible to the contacted broker.
+    ///
+    /// By default this matches all ACL resources, operations, and permission types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_acls(&mut self) -> Result<DescribeAclsResponseData> {
+        self.describe_acls_with_filter(&DescribeAclsFilter::default())
+    }
+
+    /// Describes ACLs using Kafka resource, principal, host, operation, or permission filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_acls_with_filter(
+        &mut self,
+        filter: &DescribeAclsFilter,
+    ) -> Result<DescribeAclsResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeAcls"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_acls_request(
+                correlation_id,
+                &self.config.client_id,
+                filter,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_ACLS,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<kafka_protocol::messages::DescribeAclsResponse>(
+                    conn,
+                    crate::protocol::API_VERSION_DESCRIBE_ACLS,
+                )
+            }) {
+                Ok(resp) => {
+                    return Ok(crate::protocol::admin::convert_describe_acls_response(resp));
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeAcls")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
     /// Describes Kafka topic, broker, or broker logger configs.
     ///
     /// By default this fetches all config keys without synonyms or documentation.
@@ -926,6 +998,73 @@ impl KafkaClient {
                     ));
                 }
                 Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeConfigs")),
+            }
+        }
+
+        Err(last_err.unwrap_or_else(Error::no_host_reachable))
+    }
+
+    /// Describes all delegation tokens visible to the contacted broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_delegation_tokens(&mut self) -> Result<DescribeDelegationTokenResponseData> {
+        self.describe_delegation_tokens_with_owners(None)
+    }
+
+    /// Describes delegation tokens owned by selected principals.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if brokers are unreachable or the broker response cannot be decoded.
+    pub fn describe_delegation_tokens_for(
+        &mut self,
+        owners: &[KafkaPrincipal],
+    ) -> Result<DescribeDelegationTokenResponseData> {
+        self.describe_delegation_tokens_with_owners(Some(owners))
+    }
+
+    fn describe_delegation_tokens_with_owners(
+        &mut self,
+        owners: Option<&[KafkaPrincipal]>,
+    ) -> Result<DescribeDelegationTokenResponseData> {
+        let correlation_id = self.state.next_correlation_id();
+        let now = std::time::Instant::now();
+        let hosts = self.config.hosts.clone();
+        let mut last_err: Option<Error> = None;
+
+        for host in hosts {
+            let conn = match self.conn_pool.get_conn(&host, now) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    last_err = Some(e.with_broker_context(&host, "DescribeDelegationToken"));
+                    continue;
+                }
+            };
+
+            let (header, request) = crate::protocol::admin::build_describe_delegation_token_request(
+                correlation_id,
+                &self.config.client_id,
+                owners,
+            );
+            match transport::kp_send_request(
+                conn,
+                &header,
+                &request,
+                crate::protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+            )
+            .and_then(|()| {
+                transport::kp_get_response::<
+                    kafka_protocol::messages::DescribeDelegationTokenResponse,
+                >(conn, crate::protocol::API_VERSION_DESCRIBE_DELEGATION_TOKEN)
+            }) {
+                Ok(resp) => {
+                    return Ok(
+                        crate::protocol::admin::convert_describe_delegation_token_response(resp),
+                    );
+                }
+                Err(e) => last_err = Some(e.with_broker_context(&host, "DescribeDelegationToken")),
             }
         }
 

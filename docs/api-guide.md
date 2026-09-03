@@ -131,8 +131,9 @@ tx.commit().unwrap();
 ```rust,no_run
 use std::time::Duration;
 use rustfs_kafka::client::{
-    ClientQuotaEntityFilter, ConfigResource, DescribeClientQuotasOptions, KafkaClient,
-    ListTransactionsOptions, TopicPartitionFilter,
+    ClientQuotaEntityFilter, ConfigResource, DescribeAclsFilter, DescribeClientQuotasOptions,
+    KafkaClient, KafkaPrincipal, ListTransactionsOptions, TopicPartitionFilter,
+    ACL_OPERATION_READ, ACL_PATTERN_TYPE_LITERAL, ACL_PERMISSION_TYPE_ALLOW, ACL_RESOURCE_TYPE_TOPIC,
 };
 
 let mut client = KafkaClient::new(vec!["localhost:9092".to_owned()]);
@@ -164,6 +165,17 @@ for group in described.groups {
     println!("group={} members={}", group.group_id, group.members.len());
 }
 
+let acl_filter = DescribeAclsFilter::any()
+    .with_resource_type(ACL_RESOURCE_TYPE_TOPIC)
+    .with_resource_name("my-topic")
+    .with_pattern_type(ACL_PATTERN_TYPE_LITERAL)
+    .with_operation(ACL_OPERATION_READ)
+    .with_permission_type(ACL_PERMISSION_TYPE_ALLOW);
+let acls = client.describe_acls_with_filter(&acl_filter).unwrap();
+for resource in acls.resources {
+    println!("acl_resource={} acls={}", resource.resource_name, resource.acls.len());
+}
+
 let configs = client
     .describe_configs(&[
         ConfigResource::topic("my-topic").with_configuration_keys(["retention.ms"]),
@@ -191,6 +203,13 @@ let reassignments = client
     .unwrap();
 for topic in reassignments.topics {
     println!("topic={} reassignments={}", topic.name, topic.partitions.len());
+}
+
+let tokens = client
+    .describe_delegation_tokens_for(&[KafkaPrincipal::user("alice")])
+    .unwrap();
+for token in tokens.tokens {
+    println!("token_id={} renewers={}", token.token_id, token.renewers.len());
 }
 
 let quota_filter = DescribeClientQuotasOptions::new()
@@ -242,7 +261,9 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `describe_cluster_with_options(include_authorized_operations, include_fenced_brokers)`
 - `list_groups_with_filters(states_filter, types_filter)`
 - `describe_groups_with_options(groups, include_authorized_operations)`
+- `describe_acls_with_filter(filter)`
 - `describe_configs_with_options(resources, include_synonyms, include_documentation)`
+- `describe_delegation_tokens_for(owners)`
 - `describe_log_dirs_for(topic_partition_filters)`
 - `list_partition_reassignments_for(topic_partition_filters, timeout)`
 - `describe_client_quotas_with_options(options)`

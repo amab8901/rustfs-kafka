@@ -2,19 +2,22 @@
 
 use bytes::Bytes;
 use kafka_protocol::messages::{
-    ApiKey, DescribeClientQuotasRequest, DescribeClientQuotasResponse, DescribeClusterRequest,
-    DescribeClusterResponse, DescribeConfigsRequest, DescribeConfigsResponse,
-    DescribeGroupsRequest, DescribeGroupsResponse, DescribeLogDirsRequest, DescribeLogDirsResponse,
-    DescribeProducersRequest, DescribeProducersResponse, DescribeTransactionsRequest,
-    DescribeTransactionsResponse, DescribeUserScramCredentialsRequest,
-    DescribeUserScramCredentialsResponse, GroupId, ListGroupsRequest, ListGroupsResponse,
-    ListPartitionReassignmentsRequest, ListPartitionReassignmentsResponse, ListTransactionsRequest,
-    ListTransactionsResponse, RequestHeader,
+    ApiKey, DescribeAclsRequest, DescribeAclsResponse, DescribeClientQuotasRequest,
+    DescribeClientQuotasResponse, DescribeClusterRequest, DescribeClusterResponse,
+    DescribeConfigsRequest, DescribeConfigsResponse, DescribeDelegationTokenRequest,
+    DescribeDelegationTokenResponse, DescribeGroupsRequest, DescribeGroupsResponse,
+    DescribeLogDirsRequest, DescribeLogDirsResponse, DescribeProducersRequest,
+    DescribeProducersResponse, DescribeTransactionsRequest, DescribeTransactionsResponse,
+    DescribeUserScramCredentialsRequest, DescribeUserScramCredentialsResponse, GroupId,
+    ListGroupsRequest, ListGroupsResponse, ListPartitionReassignmentsRequest,
+    ListPartitionReassignmentsResponse, ListTransactionsRequest, ListTransactionsResponse,
+    RequestHeader,
 };
 use kafka_protocol::protocol::StrBytes;
 
 use super::{
-    API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
+    API_VERSION_DESCRIBE_ACLS, API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER,
+    API_VERSION_DESCRIBE_CONFIGS, API_VERSION_DESCRIBE_DELEGATION_TOKEN,
     API_VERSION_DESCRIBE_GROUPS, API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS,
     API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
     API_VERSION_LIST_GROUPS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
@@ -30,6 +33,66 @@ pub const CONFIG_RESOURCE_TYPE_TOPIC: i8 = 2;
 pub const CONFIG_RESOURCE_TYPE_BROKER: i8 = 4;
 /// Broker logger config resource type for `DescribeConfigs`.
 pub const CONFIG_RESOURCE_TYPE_BROKER_LOGGER: i8 = 8;
+
+/// Match any ACL resource type.
+pub const ACL_RESOURCE_TYPE_ANY: i8 = 1;
+/// Topic ACL resource type.
+pub const ACL_RESOURCE_TYPE_TOPIC: i8 = 2;
+/// Consumer group ACL resource type.
+pub const ACL_RESOURCE_TYPE_GROUP: i8 = 3;
+/// Cluster ACL resource type.
+pub const ACL_RESOURCE_TYPE_CLUSTER: i8 = 4;
+/// Transactional ID ACL resource type.
+pub const ACL_RESOURCE_TYPE_TRANSACTIONAL_ID: i8 = 5;
+/// Delegation token ACL resource type.
+pub const ACL_RESOURCE_TYPE_DELEGATION_TOKEN: i8 = 6;
+/// User ACL resource type.
+pub const ACL_RESOURCE_TYPE_USER: i8 = 7;
+
+/// Match any ACL resource pattern type.
+pub const ACL_PATTERN_TYPE_ANY: i8 = 1;
+/// Match literal or prefixed ACL resource patterns.
+pub const ACL_PATTERN_TYPE_MATCH: i8 = 2;
+/// Literal ACL resource pattern type.
+pub const ACL_PATTERN_TYPE_LITERAL: i8 = 3;
+/// Prefixed ACL resource pattern type.
+pub const ACL_PATTERN_TYPE_PREFIXED: i8 = 4;
+
+/// Match any ACL operation.
+pub const ACL_OPERATION_ANY: i8 = 1;
+/// All ACL operations.
+pub const ACL_OPERATION_ALL: i8 = 2;
+/// Read ACL operation.
+pub const ACL_OPERATION_READ: i8 = 3;
+/// Write ACL operation.
+pub const ACL_OPERATION_WRITE: i8 = 4;
+/// Create ACL operation.
+pub const ACL_OPERATION_CREATE: i8 = 5;
+/// Delete ACL operation.
+pub const ACL_OPERATION_DELETE: i8 = 6;
+/// Alter ACL operation.
+pub const ACL_OPERATION_ALTER: i8 = 7;
+/// Describe ACL operation.
+pub const ACL_OPERATION_DESCRIBE: i8 = 8;
+/// Cluster action ACL operation.
+pub const ACL_OPERATION_CLUSTER_ACTION: i8 = 9;
+/// Describe configs ACL operation.
+pub const ACL_OPERATION_DESCRIBE_CONFIGS: i8 = 10;
+/// Alter configs ACL operation.
+pub const ACL_OPERATION_ALTER_CONFIGS: i8 = 11;
+/// Idempotent write ACL operation.
+pub const ACL_OPERATION_IDEMPOTENT_WRITE: i8 = 12;
+/// Create tokens ACL operation.
+pub const ACL_OPERATION_CREATE_TOKENS: i8 = 13;
+/// Describe tokens ACL operation.
+pub const ACL_OPERATION_DESCRIBE_TOKENS: i8 = 14;
+
+/// Match any ACL permission type.
+pub const ACL_PERMISSION_TYPE_ANY: i8 = 1;
+/// Deny ACL permission type.
+pub const ACL_PERMISSION_TYPE_DENY: i8 = 2;
+/// Allow ACL permission type.
+pub const ACL_PERMISSION_TYPE_ALLOW: i8 = 3;
 
 /// Match an exact client quota entity name.
 pub const CLIENT_QUOTA_MATCH_EXACT: i8 = 0;
@@ -115,6 +178,122 @@ impl TopicPartitionFilter {
             topic: topic.into(),
             partitions: partitions.into_iter().collect(),
         }
+    }
+}
+
+/// A Kafka principal identified by type and name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KafkaPrincipal {
+    /// Principal type, such as `User`.
+    pub principal_type: String,
+    /// Principal name.
+    pub principal_name: String,
+}
+
+impl KafkaPrincipal {
+    /// Create a principal with explicit Kafka type and name.
+    #[must_use]
+    pub fn new(principal_type: impl Into<String>, principal_name: impl Into<String>) -> Self {
+        Self {
+            principal_type: principal_type.into(),
+            principal_name: principal_name.into(),
+        }
+    }
+
+    /// Create a Kafka user principal.
+    #[must_use]
+    pub fn user(name: impl Into<String>) -> Self {
+        Self::new("User", name)
+    }
+}
+
+/// Filters for a `DescribeAcls` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeAclsFilter {
+    /// Raw Kafka ACL resource type filter.
+    pub resource_type_filter: i8,
+    /// Optional resource name filter.
+    pub resource_name_filter: Option<String>,
+    /// Raw Kafka ACL pattern type filter.
+    pub pattern_type_filter: i8,
+    /// Optional principal filter.
+    pub principal_filter: Option<String>,
+    /// Optional host filter.
+    pub host_filter: Option<String>,
+    /// Raw Kafka ACL operation filter.
+    pub operation: i8,
+    /// Raw Kafka ACL permission type filter.
+    pub permission_type: i8,
+}
+
+impl Default for DescribeAclsFilter {
+    fn default() -> Self {
+        Self {
+            resource_type_filter: ACL_RESOURCE_TYPE_ANY,
+            resource_name_filter: None,
+            pattern_type_filter: ACL_PATTERN_TYPE_ANY,
+            principal_filter: None,
+            host_filter: None,
+            operation: ACL_OPERATION_ANY,
+            permission_type: ACL_PERMISSION_TYPE_ANY,
+        }
+    }
+}
+
+impl DescribeAclsFilter {
+    /// Create a filter that matches all ACLs visible to the broker.
+    #[must_use]
+    pub fn any() -> Self {
+        Self::default()
+    }
+
+    /// Restrict by Kafka resource type.
+    #[must_use]
+    pub fn with_resource_type(mut self, resource_type: i8) -> Self {
+        self.resource_type_filter = resource_type;
+        self
+    }
+
+    /// Restrict by resource name.
+    #[must_use]
+    pub fn with_resource_name(mut self, resource_name: impl Into<String>) -> Self {
+        self.resource_name_filter = Some(resource_name.into());
+        self
+    }
+
+    /// Restrict by Kafka resource pattern type.
+    #[must_use]
+    pub fn with_pattern_type(mut self, pattern_type: i8) -> Self {
+        self.pattern_type_filter = pattern_type;
+        self
+    }
+
+    /// Restrict by principal string, such as `User:alice`.
+    #[must_use]
+    pub fn with_principal(mut self, principal: impl Into<String>) -> Self {
+        self.principal_filter = Some(principal.into());
+        self
+    }
+
+    /// Restrict by host.
+    #[must_use]
+    pub fn with_host(mut self, host: impl Into<String>) -> Self {
+        self.host_filter = Some(host.into());
+        self
+    }
+
+    /// Restrict by Kafka ACL operation.
+    #[must_use]
+    pub fn with_operation(mut self, operation: i8) -> Self {
+        self.operation = operation;
+        self
+    }
+
+    /// Restrict by Kafka ACL permission type.
+    #[must_use]
+    pub fn with_permission_type(mut self, permission_type: i8) -> Self {
+        self.permission_type = permission_type;
+        self
     }
 }
 
@@ -504,6 +683,77 @@ pub struct ListPartitionReassignmentsResponseData {
     pub topics: Vec<TopicReassignment>,
 }
 
+/// One ACL entry returned by `DescribeAcls`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AclDescription {
+    /// ACL principal string, such as `User:alice`.
+    pub principal: String,
+    /// Host to which the ACL applies.
+    pub host: String,
+    /// Raw Kafka ACL operation code.
+    pub operation: i8,
+    /// Raw Kafka ACL permission type code.
+    pub permission_type: i8,
+}
+
+/// ACLs grouped by resource.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AclResource {
+    /// Raw Kafka ACL resource type code.
+    pub resource_type: i8,
+    /// Resource name.
+    pub resource_name: String,
+    /// Raw Kafka ACL pattern type code.
+    pub pattern_type: i8,
+    /// ACL entries on the resource.
+    pub acls: Vec<AclDescription>,
+}
+
+/// Parsed response from a `DescribeAcls` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeAclsResponseData {
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Optional top-level broker error message.
+    pub error_message: Option<String>,
+    /// ACL resources returned by the broker.
+    pub resources: Vec<AclResource>,
+}
+
+/// One delegation token returned by `DescribeDelegationToken`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DelegationTokenDescription {
+    /// Owner principal.
+    pub owner: KafkaPrincipal,
+    /// Requester principal when returned by Kafka v3+.
+    pub requester: Option<KafkaPrincipal>,
+    /// Token issue timestamp in milliseconds since Unix epoch.
+    pub issue_timestamp: i64,
+    /// Token expiry timestamp in milliseconds since Unix epoch.
+    pub expiry_timestamp: i64,
+    /// Token maximum timestamp in milliseconds since Unix epoch.
+    pub max_timestamp: i64,
+    /// Token ID.
+    pub token_id: String,
+    /// Broker-provided token HMAC. Treat this value as sensitive credential material.
+    pub hmac: Bytes,
+    /// Principals allowed to renew this token.
+    pub renewers: Vec<KafkaPrincipal>,
+}
+
+/// Parsed response from a `DescribeDelegationToken` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeDelegationTokenResponseData {
+    /// Top-level broker error code.
+    pub error_code: i16,
+    /// Delegation tokens returned by the broker.
+    pub tokens: Vec<DelegationTokenDescription>,
+    /// Quota throttle time in milliseconds.
+    pub throttle_time_ms: i32,
+}
+
 /// One entity component returned by `DescribeClientQuotas`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientQuotaEntity {
@@ -751,6 +1001,45 @@ pub fn build_describe_groups_request(
     (header, request)
 }
 
+/// Build a `DescribeAcls` request.
+pub fn build_describe_acls_request(
+    correlation_id: i32,
+    client_id: &str,
+    filter: &DescribeAclsFilter,
+) -> (RequestHeader, DescribeAclsRequest) {
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeAcls,
+        API_VERSION_DESCRIBE_ACLS,
+    );
+    let request = DescribeAclsRequest::default()
+        .with_resource_type_filter(filter.resource_type_filter)
+        .with_resource_name_filter(
+            filter
+                .resource_name_filter
+                .as_ref()
+                .map(|name| StrBytes::from_string(name.clone())),
+        )
+        .with_pattern_type_filter(filter.pattern_type_filter)
+        .with_principal_filter(
+            filter
+                .principal_filter
+                .as_ref()
+                .map(|principal| StrBytes::from_string(principal.clone())),
+        )
+        .with_host_filter(
+            filter
+                .host_filter
+                .as_ref()
+                .map(|host| StrBytes::from_string(host.clone())),
+        )
+        .with_operation(filter.operation)
+        .with_permission_type(filter.permission_type);
+
+    (header, request)
+}
+
 /// Build a `DescribeConfigs` request.
 pub fn build_describe_configs_request(
     correlation_id: i32,
@@ -784,6 +1073,45 @@ pub fn build_describe_configs_request(
         .with_resources(resources)
         .with_include_synonyms(include_synonyms)
         .with_include_documentation(include_documentation);
+
+    (header, request)
+}
+
+/// Build a `DescribeDelegationToken` request.
+pub fn build_describe_delegation_token_request(
+    correlation_id: i32,
+    client_id: &str,
+    owners: Option<&[KafkaPrincipal]>,
+) -> (RequestHeader, DescribeDelegationTokenRequest) {
+    use kafka_protocol::messages::describe_delegation_token_request::DescribeDelegationTokenOwner;
+
+    let header = request_header(
+        correlation_id,
+        client_id,
+        ApiKey::DescribeDelegationToken,
+        API_VERSION_DESCRIBE_DELEGATION_TOKEN,
+    );
+    let owners = owners.and_then(|owners| {
+        if owners.is_empty() {
+            None
+        } else {
+            Some(
+                owners
+                    .iter()
+                    .map(|owner| {
+                        DescribeDelegationTokenOwner::default()
+                            .with_principal_type(StrBytes::from_string(
+                                owner.principal_type.clone(),
+                            ))
+                            .with_principal_name(StrBytes::from_string(
+                                owner.principal_name.clone(),
+                            ))
+                    })
+                    .collect(),
+            )
+        }
+    });
+    let request = DescribeDelegationTokenRequest::default().with_owners(owners);
 
     (header, request)
 }
@@ -1087,6 +1415,34 @@ pub fn convert_describe_groups_response(
     }
 }
 
+/// Convert a generated `DescribeAclsResponse` into the crate's public shape.
+pub fn convert_describe_acls_response(response: DescribeAclsResponse) -> DescribeAclsResponseData {
+    DescribeAclsResponseData {
+        throttle_time_ms: response.throttle_time_ms,
+        error_code: response.error_code,
+        error_message: response.error_message.map(|message| message.to_string()),
+        resources: response
+            .resources
+            .into_iter()
+            .map(|resource| AclResource {
+                resource_type: resource.resource_type,
+                resource_name: resource.resource_name.to_string(),
+                pattern_type: resource.pattern_type,
+                acls: resource
+                    .acls
+                    .into_iter()
+                    .map(|acl| AclDescription {
+                        principal: acl.principal.to_string(),
+                        host: acl.host.to_string(),
+                        operation: acl.operation,
+                        permission_type: acl.permission_type,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Convert a generated `DescribeConfigsResponse` into the crate's public shape.
 pub fn convert_describe_configs_response(
     response: DescribeConfigsResponse,
@@ -1164,6 +1520,51 @@ pub fn convert_describe_log_dirs_response(
                 usable_bytes: result.usable_bytes,
             })
             .collect(),
+    }
+}
+
+/// Convert a generated `DescribeDelegationTokenResponse` into the crate's public shape.
+pub fn convert_describe_delegation_token_response(
+    response: DescribeDelegationTokenResponse,
+) -> DescribeDelegationTokenResponseData {
+    DescribeDelegationTokenResponseData {
+        error_code: response.error_code,
+        tokens: response
+            .tokens
+            .into_iter()
+            .map(|token| DelegationTokenDescription {
+                owner: KafkaPrincipal::new(
+                    token.principal_type.to_string(),
+                    token.principal_name.to_string(),
+                ),
+                requester: if token.token_requester_principal_type.is_empty()
+                    && token.token_requester_principal_name.is_empty()
+                {
+                    None
+                } else {
+                    Some(KafkaPrincipal::new(
+                        token.token_requester_principal_type.to_string(),
+                        token.token_requester_principal_name.to_string(),
+                    ))
+                },
+                issue_timestamp: token.issue_timestamp,
+                expiry_timestamp: token.expiry_timestamp,
+                max_timestamp: token.max_timestamp,
+                token_id: token.token_id.to_string(),
+                hmac: token.hmac,
+                renewers: token
+                    .renewers
+                    .into_iter()
+                    .map(|renewer| {
+                        KafkaPrincipal::new(
+                            renewer.principal_type.to_string(),
+                            renewer.principal_name.to_string(),
+                        )
+                    })
+                    .collect(),
+            })
+            .collect(),
+        throttle_time_ms: response.throttle_time_ms,
     }
 }
 
@@ -1387,6 +1788,9 @@ fn transactional_id(value: &str) -> kafka_protocol::messages::TransactionalId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kafka_protocol::messages::describe_acls_response::{
+        AclDescription as KpAclDescription, DescribeAclsResource as KpAclResource,
+    };
     use kafka_protocol::messages::describe_client_quotas_response::{
         EntityData as KpClientQuotaEntity, EntryData as KpClientQuotaEntry,
         ValueData as KpClientQuotaValue,
@@ -1396,6 +1800,10 @@ mod tests {
         DescribeConfigsResourceResult as KpDescribeConfigsResourceResult,
         DescribeConfigsResult as KpDescribeConfigsResult,
         DescribeConfigsSynonym as KpDescribeConfigsSynonym,
+    };
+    use kafka_protocol::messages::describe_delegation_token_response::{
+        DescribedDelegationToken as KpDelegationToken,
+        DescribedDelegationTokenRenewer as KpDelegationTokenRenewer,
     };
     use kafka_protocol::messages::describe_groups_response::{
         DescribedGroup as KpDescribedGroup, DescribedGroupMember as KpDescribedGroupMember,
@@ -1470,11 +1878,46 @@ mod tests {
     }
 
     #[test]
+    fn describe_acls_request_accepts_resource_and_principal_filters() {
+        let filter = DescribeAclsFilter::any()
+            .with_resource_type(ACL_RESOURCE_TYPE_TOPIC)
+            .with_resource_name("topic-a")
+            .with_pattern_type(ACL_PATTERN_TYPE_LITERAL)
+            .with_principal("User:alice")
+            .with_host("*")
+            .with_operation(ACL_OPERATION_READ)
+            .with_permission_type(ACL_PERMISSION_TYPE_ALLOW);
+        let (header, request) = build_describe_acls_request(9, "client-d", &filter);
+
+        assert_eq!(header.request_api_key, ApiKey::DescribeAcls as i16);
+        assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_ACLS);
+        assert_eq!(request.resource_type_filter, ACL_RESOURCE_TYPE_TOPIC);
+        assert_eq!(
+            request
+                .resource_name_filter
+                .as_ref()
+                .map(ToString::to_string),
+            Some("topic-a".to_owned())
+        );
+        assert_eq!(request.pattern_type_filter, ACL_PATTERN_TYPE_LITERAL);
+        assert_eq!(
+            request.principal_filter.as_ref().map(ToString::to_string),
+            Some("User:alice".to_owned())
+        );
+        assert_eq!(
+            request.host_filter.as_ref().map(ToString::to_string),
+            Some("*".to_owned())
+        );
+        assert_eq!(request.operation, ACL_OPERATION_READ);
+        assert_eq!(request.permission_type, ACL_PERMISSION_TYPE_ALLOW);
+    }
+
+    #[test]
     fn describe_configs_request_fetches_selected_topic_keys() {
         let resources = [ConfigResource::topic("topic-a")
             .with_configuration_keys(["retention.ms", "cleanup.policy"])];
         let (header, request) =
-            build_describe_configs_request(9, "client-d", &resources, true, true);
+            build_describe_configs_request(10, "client-e", &resources, true, true);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeConfigs as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_CONFIGS);
@@ -1497,7 +1940,7 @@ mod tests {
     #[test]
     fn describe_configs_request_fetches_all_broker_keys_when_keys_are_absent() {
         let resources = [ConfigResource::broker("1")];
-        let (_, request) = build_describe_configs_request(10, "client-e", &resources, false, false);
+        let (_, request) = build_describe_configs_request(11, "client-f", &resources, false, false);
 
         assert_eq!(
             request.resources[0].resource_type,
@@ -1507,8 +1950,31 @@ mod tests {
     }
 
     #[test]
+    fn describe_delegation_token_request_distinguishes_all_and_selected_owners() {
+        let (all_header, all_request) =
+            build_describe_delegation_token_request(12, "client-g", None);
+        let owner = KafkaPrincipal::user("alice");
+        let (selected_header, selected_request) =
+            build_describe_delegation_token_request(13, "client-h", Some(&[owner]));
+
+        assert_eq!(
+            all_header.request_api_key,
+            ApiKey::DescribeDelegationToken as i16
+        );
+        assert_eq!(
+            all_header.request_api_version,
+            API_VERSION_DESCRIBE_DELEGATION_TOKEN
+        );
+        assert!(all_request.owners.is_none());
+        assert_eq!(selected_header.correlation_id, 13);
+        let owners = selected_request.owners.unwrap();
+        assert_eq!(owners[0].principal_type.to_string(), "User");
+        assert_eq!(owners[0].principal_name.to_string(), "alice");
+    }
+
+    #[test]
     fn describe_log_dirs_request_fetches_all_topics_when_filter_is_absent() {
-        let (header, request) = build_describe_log_dirs_request(11, "client-f", None);
+        let (header, request) = build_describe_log_dirs_request(14, "client-i", None);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeLogDirs as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_LOG_DIRS);
@@ -1518,7 +1984,7 @@ mod tests {
     #[test]
     fn describe_log_dirs_request_fetches_selected_partitions() {
         let filter = [TopicPartitionFilter::new("topic-a", [0, 2])];
-        let (_, request) = build_describe_log_dirs_request(12, "client-g", Some(&filter));
+        let (_, request) = build_describe_log_dirs_request(15, "client-j", Some(&filter));
 
         let topic = &request.topics.as_ref().unwrap()[0];
         assert_eq!(topic.topic.to_string(), "topic-a");
@@ -1529,7 +1995,7 @@ mod tests {
     fn list_partition_reassignments_request_accepts_timeout_and_filter() {
         let filter = [TopicPartitionFilter::new("topic-a", [1])];
         let (header, request) =
-            build_list_partition_reassignments_request(13, "client-h", Some(&filter), 5000);
+            build_list_partition_reassignments_request(16, "client-k", Some(&filter), 5000);
 
         assert_eq!(
             header.request_api_key,
@@ -1552,7 +2018,7 @@ mod tests {
             .with_component(ClientQuotaEntityFilter::default_entity("client-id"))
             .with_component(ClientQuotaEntityFilter::any_specified("ip"))
             .strict();
-        let (header, request) = build_describe_client_quotas_request(14, "client-i", &options);
+        let (header, request) = build_describe_client_quotas_request(17, "client-l", &options);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeClientQuotas as i16);
         assert_eq!(
@@ -1582,9 +2048,9 @@ mod tests {
     #[test]
     fn describe_user_scram_credentials_request_distinguishes_all_and_selected_users() {
         let (all_header, all_request) =
-            build_describe_user_scram_credentials_request(15, "client-j", None);
+            build_describe_user_scram_credentials_request(18, "client-m", None);
         let (selected_header, selected_request) =
-            build_describe_user_scram_credentials_request(16, "client-k", Some(&["alice", "bob"]));
+            build_describe_user_scram_credentials_request(19, "client-n", Some(&["alice", "bob"]));
 
         assert_eq!(
             all_header.request_api_key,
@@ -1595,7 +2061,7 @@ mod tests {
             API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS
         );
         assert!(all_request.users.is_none());
-        assert_eq!(selected_header.correlation_id, 16);
+        assert_eq!(selected_header.correlation_id, 19);
         let users = selected_request.users.unwrap();
         assert_eq!(users[0].name.to_string(), "alice");
         assert_eq!(users[1].name.to_string(), "bob");
@@ -1604,7 +2070,7 @@ mod tests {
     #[test]
     fn describe_producers_request_uses_topic_partition_filters() {
         let filter = [TopicPartitionFilter::new("topic-a", [0, 1])];
-        let (header, request) = build_describe_producers_request(17, "client-l", &filter);
+        let (header, request) = build_describe_producers_request(20, "client-o", &filter);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeProducers as i16);
         assert_eq!(header.request_api_version, API_VERSION_DESCRIBE_PRODUCERS);
@@ -1619,7 +2085,7 @@ mod tests {
             .with_producer_id_filters([42, 43])
             .with_duration_filter_ms(30_000)
             .with_transactional_id_pattern("rustfs-.*");
-        let (header, request) = build_list_transactions_request(18, "client-m", &options);
+        let (header, request) = build_list_transactions_request(21, "client-p", &options);
 
         assert_eq!(header.request_api_key, ApiKey::ListTransactions as i16);
         assert_eq!(header.request_api_version, API_VERSION_LIST_TRANSACTIONS);
@@ -1650,7 +2116,7 @@ mod tests {
     #[test]
     fn describe_transactions_request_includes_transactional_ids() {
         let (header, request) =
-            build_describe_transactions_request(19, "client-n", &["txn-a", "txn-b"]);
+            build_describe_transactions_request(22, "client-q", &["txn-a", "txn-b"]);
 
         assert_eq!(header.request_api_key, ApiKey::DescribeTransactions as i16);
         assert_eq!(
@@ -1772,9 +2238,51 @@ mod tests {
     }
 
     #[test]
+    fn convert_describe_acls_response_preserves_resource_grouping() {
+        let response = DescribeAclsResponse::default()
+            .with_throttle_time_ms(13)
+            .with_error_code(0)
+            .with_error_message(Some(StrBytes::from_static_str("ok")))
+            .with_resources(vec![
+                KpAclResource::default()
+                    .with_resource_type(ACL_RESOURCE_TYPE_TOPIC)
+                    .with_resource_name(StrBytes::from_static_str("topic-a"))
+                    .with_pattern_type(ACL_PATTERN_TYPE_LITERAL)
+                    .with_acls(vec![
+                        KpAclDescription::default()
+                            .with_principal(StrBytes::from_static_str("User:alice"))
+                            .with_host(StrBytes::from_static_str("*"))
+                            .with_operation(ACL_OPERATION_READ)
+                            .with_permission_type(ACL_PERMISSION_TYPE_ALLOW),
+                    ]),
+            ]);
+
+        let converted = convert_describe_acls_response(response);
+
+        assert_eq!(converted.throttle_time_ms, 13);
+        assert_eq!(converted.error_message, Some("ok".to_owned()));
+        assert_eq!(
+            converted.resources[0].resource_type,
+            ACL_RESOURCE_TYPE_TOPIC
+        );
+        assert_eq!(converted.resources[0].resource_name, "topic-a");
+        assert_eq!(
+            converted.resources[0].pattern_type,
+            ACL_PATTERN_TYPE_LITERAL
+        );
+        assert_eq!(converted.resources[0].acls[0].principal, "User:alice");
+        assert_eq!(converted.resources[0].acls[0].host, "*");
+        assert_eq!(converted.resources[0].acls[0].operation, ACL_OPERATION_READ);
+        assert_eq!(
+            converted.resources[0].acls[0].permission_type,
+            ACL_PERMISSION_TYPE_ALLOW
+        );
+    }
+
+    #[test]
     fn convert_describe_configs_response_preserves_config_metadata() {
         let response = DescribeConfigsResponse::default()
-            .with_throttle_time_ms(13)
+            .with_throttle_time_ms(14)
             .with_results(vec![
                 KpDescribeConfigsResult::default()
                     .with_error_code(0)
@@ -1803,7 +2311,7 @@ mod tests {
 
         let converted = convert_describe_configs_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 13);
+        assert_eq!(converted.throttle_time_ms, 14);
         assert_eq!(converted.results[0].error_message, Some("ok".to_owned()));
         assert_eq!(converted.results[0].resource_name, "topic-a");
         assert_eq!(converted.results[0].configs[0].name, "retention.ms");
@@ -1819,9 +2327,49 @@ mod tests {
     }
 
     #[test]
+    fn convert_describe_delegation_token_response_preserves_sensitive_token_metadata() {
+        let response = DescribeDelegationTokenResponse::default()
+            .with_error_code(0)
+            .with_tokens(vec![
+                KpDelegationToken::default()
+                    .with_principal_type(StrBytes::from_static_str("User"))
+                    .with_principal_name(StrBytes::from_static_str("alice"))
+                    .with_token_requester_principal_type(StrBytes::from_static_str("User"))
+                    .with_token_requester_principal_name(StrBytes::from_static_str("admin"))
+                    .with_issue_timestamp(1_700_000)
+                    .with_expiry_timestamp(1_800_000)
+                    .with_max_timestamp(1_900_000)
+                    .with_token_id(StrBytes::from_static_str("token-a"))
+                    .with_hmac(Bytes::from_static(b"hmac"))
+                    .with_renewers(vec![
+                        KpDelegationTokenRenewer::default()
+                            .with_principal_type(StrBytes::from_static_str("User"))
+                            .with_principal_name(StrBytes::from_static_str("bob")),
+                    ]),
+            ])
+            .with_throttle_time_ms(15);
+
+        let converted = convert_describe_delegation_token_response(response);
+
+        assert_eq!(converted.error_code, 0);
+        assert_eq!(converted.throttle_time_ms, 15);
+        assert_eq!(converted.tokens[0].owner, KafkaPrincipal::user("alice"));
+        assert_eq!(
+            converted.tokens[0].requester,
+            Some(KafkaPrincipal::user("admin"))
+        );
+        assert_eq!(converted.tokens[0].token_id, "token-a");
+        assert_eq!(converted.tokens[0].hmac, Bytes::from_static(b"hmac"));
+        assert_eq!(
+            converted.tokens[0].renewers,
+            vec![KafkaPrincipal::user("bob")]
+        );
+    }
+
+    #[test]
     fn convert_describe_log_dirs_response_preserves_storage_details() {
         let response = DescribeLogDirsResponse::default()
-            .with_throttle_time_ms(15)
+            .with_throttle_time_ms(16)
             .with_error_code(0)
             .with_results(vec![
                 KpDescribeLogDirsResult::default()
@@ -1844,7 +2392,7 @@ mod tests {
 
         let converted = convert_describe_log_dirs_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 15);
+        assert_eq!(converted.throttle_time_ms, 16);
         assert_eq!(converted.results[0].log_dir, "/kafka-logs");
         assert_eq!(converted.results[0].total_bytes, 1_000);
         assert_eq!(converted.results[0].topics[0].name, "topic-a");
@@ -1855,7 +2403,7 @@ mod tests {
     #[test]
     fn convert_list_partition_reassignments_response_preserves_replica_sets() {
         let response = ListPartitionReassignmentsResponse::default()
-            .with_throttle_time_ms(16)
+            .with_throttle_time_ms(17)
             .with_error_code(0)
             .with_error_message(Some(StrBytes::from_static_str("ok")))
             .with_topics(vec![
@@ -1872,7 +2420,7 @@ mod tests {
 
         let converted = convert_list_partition_reassignments_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 16);
+        assert_eq!(converted.throttle_time_ms, 17);
         assert_eq!(converted.error_message, Some("ok".to_owned()));
         assert_eq!(converted.topics[0].name, "topic-a");
         assert_eq!(converted.topics[0].partitions[0].replicas, vec![1, 2]);
@@ -1883,7 +2431,7 @@ mod tests {
     #[test]
     fn convert_describe_client_quotas_response_preserves_entities_and_values() {
         let response = DescribeClientQuotasResponse::default()
-            .with_throttle_time_ms(17)
+            .with_throttle_time_ms(18)
             .with_error_code(0)
             .with_error_message(Some(StrBytes::from_static_str("ok")))
             .with_entries(Some(vec![
@@ -1905,7 +2453,7 @@ mod tests {
 
         let converted = convert_describe_client_quotas_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 17);
+        assert_eq!(converted.throttle_time_ms, 18);
         assert_eq!(converted.error_message, Some("ok".to_owned()));
         let entry = &converted.entries.as_ref().unwrap()[0];
         assert_eq!(entry.entity[0].entity_type, "user");
@@ -1919,7 +2467,7 @@ mod tests {
     #[test]
     fn convert_describe_user_scram_credentials_response_preserves_credentials() {
         let response = DescribeUserScramCredentialsResponse::default()
-            .with_throttle_time_ms(18)
+            .with_throttle_time_ms(19)
             .with_error_code(0)
             .with_error_message(Some(StrBytes::from_static_str("ok")))
             .with_results(vec![
@@ -1939,7 +2487,7 @@ mod tests {
 
         let converted = convert_describe_user_scram_credentials_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 18);
+        assert_eq!(converted.throttle_time_ms, 19);
         assert_eq!(converted.error_message, Some("ok".to_owned()));
         assert_eq!(converted.results[0].user, "alice");
         assert_eq!(converted.results[0].credential_infos.len(), 2);
@@ -1953,7 +2501,7 @@ mod tests {
     #[test]
     fn convert_describe_producers_response_preserves_active_producers() {
         let response = DescribeProducersResponse::default()
-            .with_throttle_time_ms(19)
+            .with_throttle_time_ms(20)
             .with_topics(vec![
                 KpProducerTopic::default()
                     .with_name(StrBytes::from_static_str("topic-a").into())
@@ -1976,7 +2524,7 @@ mod tests {
 
         let converted = convert_describe_producers_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 19);
+        assert_eq!(converted.throttle_time_ms, 20);
         assert_eq!(converted.topics[0].name, "topic-a");
         assert_eq!(
             converted.topics[0].partitions[0].error_message,
@@ -1995,7 +2543,7 @@ mod tests {
     #[test]
     fn convert_list_transactions_response_preserves_state_filters_and_transactions() {
         let response = ListTransactionsResponse::default()
-            .with_throttle_time_ms(20)
+            .with_throttle_time_ms(21)
             .with_error_code(0)
             .with_unknown_state_filters(vec![StrBytes::from_static_str("UnknownState")])
             .with_transaction_states(vec![
@@ -2007,7 +2555,7 @@ mod tests {
 
         let converted = convert_list_transactions_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 20);
+        assert_eq!(converted.throttle_time_ms, 21);
         assert_eq!(converted.unknown_state_filters, vec!["UnknownState"]);
         assert_eq!(
             converted.transaction_states,
@@ -2022,7 +2570,7 @@ mod tests {
     #[test]
     fn convert_describe_transactions_response_preserves_transaction_details() {
         let response = DescribeTransactionsResponse::default()
-            .with_throttle_time_ms(21)
+            .with_throttle_time_ms(22)
             .with_transaction_states(vec![
                 KpDescribedTransactionState::default()
                     .with_error_code(0)
@@ -2041,7 +2589,7 @@ mod tests {
 
         let converted = convert_describe_transactions_response(response);
 
-        assert_eq!(converted.throttle_time_ms, 21);
+        assert_eq!(converted.throttle_time_ms, 22);
         assert_eq!(converted.transaction_states[0].transactional_id, "txn-a");
         assert_eq!(
             converted.transaction_states[0].transaction_timeout_ms,
