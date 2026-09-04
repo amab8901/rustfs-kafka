@@ -125,3 +125,17 @@ impl io::Write for PlainStream {
         self.inner.flush()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_sync<T: Sync>() {}
+
+    #[test]
+    fn tls_stream_types_are_sync() {
+        assert_sync::<Box<dyn TlsStream>>();
+        assert_sync::<PlainStream>();
+        assert_sync::<rustls_connector::RustlsStream>();
+    }
+}
