@@ -26,3 +26,4 @@ mod utils;
 mod tls;
 
 pub use self::error::{Error, Result};
+pub use kafka_protocol;

@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `share_group_heartbeat`
   - `share_fetch`
   - `share_acknowledge`
+- Added `KafkaClient::send_raw_protocol_request` for advanced typed access to generated
+  `kafka-protocol` requests that are not represented by stable high-level client APIs.
+- Added API version defaults and `api_key` constants for remaining generated broker, controller,
+  coordinator, raft, and share-state protocol messages.
 - Added public response data types for broker API versions, cluster brokers, config resources/entries, config resource
   discovery, listed groups, deleted groups, described groups, described group members, ACL resources, ACL mutation
   results, config mutation results, delegation tokens, log directory diagnostics, KRaft quorum state, topic partition

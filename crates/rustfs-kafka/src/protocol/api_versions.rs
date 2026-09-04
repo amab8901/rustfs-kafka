@@ -8,30 +8,36 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ADD_RAFT_VOTER, API_VERSION_ALTER_CLIENT_QUOTAS,
-    API_VERSION_ALTER_CONFIGS, API_VERSION_ALTER_PARTITION_REASSIGNMENTS,
-    API_VERSION_ALTER_REPLICA_LOG_DIRS, API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
-    API_VERSION_ALTER_USER_SCRAM_CREDENTIALS, API_VERSION_ASSIGN_REPLICAS_TO_DIRS,
+    API_VERSION_ADD_OFFSETS_TO_TXN, API_VERSION_ADD_RAFT_VOTER, API_VERSION_ALLOCATE_PRODUCER_IDS,
+    API_VERSION_ALTER_CLIENT_QUOTAS, API_VERSION_ALTER_CONFIGS, API_VERSION_ALTER_PARTITION,
+    API_VERSION_ALTER_PARTITION_REASSIGNMENTS, API_VERSION_ALTER_REPLICA_LOG_DIRS,
+    API_VERSION_ALTER_SHARE_GROUP_OFFSETS, API_VERSION_ALTER_USER_SCRAM_CREDENTIALS,
+    API_VERSION_ASSIGN_REPLICAS_TO_DIRS, API_VERSION_BEGIN_QUORUM_EPOCH,
+    API_VERSION_BROKER_HEARTBEAT, API_VERSION_BROKER_REGISTRATION,
     API_VERSION_CONSUMER_GROUP_DESCRIBE, API_VERSION_CONSUMER_GROUP_HEARTBEAT,
-    API_VERSION_CREATE_ACLS, API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS,
-    API_VERSION_DELETE_ACLS, API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS,
-    API_VERSION_DELETE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_ACLS,
+    API_VERSION_CONTROLLER_REGISTRATION, API_VERSION_CREATE_ACLS,
+    API_VERSION_CREATE_DELEGATION_TOKEN, API_VERSION_CREATE_PARTITIONS, API_VERSION_DELETE_ACLS,
+    API_VERSION_DELETE_GROUPS, API_VERSION_DELETE_RECORDS, API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
+    API_VERSION_DELETE_SHARE_GROUP_STATE, API_VERSION_DESCRIBE_ACLS,
     API_VERSION_DESCRIBE_CLIENT_QUOTAS, API_VERSION_DESCRIBE_CLUSTER, API_VERSION_DESCRIBE_CONFIGS,
     API_VERSION_DESCRIBE_DELEGATION_TOKEN, API_VERSION_DESCRIBE_GROUPS,
     API_VERSION_DESCRIBE_LOG_DIRS, API_VERSION_DESCRIBE_PRODUCERS, API_VERSION_DESCRIBE_QUORUM,
     API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS, API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
     API_VERSION_DESCRIBE_TRANSACTIONS, API_VERSION_DESCRIBE_USER_SCRAM_CREDENTIALS,
-    API_VERSION_ELECT_LEADERS, API_VERSION_EXPIRE_DELEGATION_TOKEN, API_VERSION_FETCH,
+    API_VERSION_ELECT_LEADERS, API_VERSION_END_QUORUM_EPOCH, API_VERSION_ENVELOPE,
+    API_VERSION_EXPIRE_DELEGATION_TOKEN, API_VERSION_FETCH, API_VERSION_FETCH_SNAPSHOT,
     API_VERSION_FIND_COORDINATOR, API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
-    API_VERSION_INCREMENTAL_ALTER_CONFIGS, API_VERSION_LIST_CONFIG_RESOURCES,
-    API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS, API_VERSION_LIST_PARTITION_REASSIGNMENTS,
-    API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA, API_VERSION_OFFSET_COMMIT,
-    API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH, API_VERSION_OFFSET_FOR_LEADER_EPOCH,
-    API_VERSION_PRODUCE, API_VERSION_PUSH_TELEMETRY, API_VERSION_REMOVE_RAFT_VOTER,
-    API_VERSION_RENEW_DELEGATION_TOKEN, API_VERSION_SHARE_ACKNOWLEDGE, API_VERSION_SHARE_FETCH,
-    API_VERSION_SHARE_GROUP_DESCRIBE, API_VERSION_SHARE_GROUP_HEARTBEAT,
-    API_VERSION_TXN_OFFSET_COMMIT, API_VERSION_UNREGISTER_BROKER, API_VERSION_UPDATE_FEATURES,
-    API_VERSION_UPDATE_RAFT_VOTER,
+    API_VERSION_INCREMENTAL_ALTER_CONFIGS, API_VERSION_INITIALIZE_SHARE_GROUP_STATE,
+    API_VERSION_LIST_CONFIG_RESOURCES, API_VERSION_LIST_GROUPS, API_VERSION_LIST_OFFSETS,
+    API_VERSION_LIST_PARTITION_REASSIGNMENTS, API_VERSION_LIST_TRANSACTIONS, API_VERSION_METADATA,
+    API_VERSION_OFFSET_COMMIT, API_VERSION_OFFSET_DELETE, API_VERSION_OFFSET_FETCH,
+    API_VERSION_OFFSET_FOR_LEADER_EPOCH, API_VERSION_PRODUCE, API_VERSION_PUSH_TELEMETRY,
+    API_VERSION_READ_SHARE_GROUP_STATE, API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY,
+    API_VERSION_REMOVE_RAFT_VOTER, API_VERSION_RENEW_DELEGATION_TOKEN,
+    API_VERSION_SHARE_ACKNOWLEDGE, API_VERSION_SHARE_FETCH, API_VERSION_SHARE_GROUP_DESCRIBE,
+    API_VERSION_SHARE_GROUP_HEARTBEAT, API_VERSION_TXN_OFFSET_COMMIT,
+    API_VERSION_UNREGISTER_BROKER, API_VERSION_UPDATE_FEATURES, API_VERSION_UPDATE_RAFT_VOTER,
+    API_VERSION_VOTE, API_VERSION_WRITE_SHARE_GROUP_STATE, API_VERSION_WRITE_TXN_MARKERS,
 };
 use tracing::{debug, info};
 
@@ -86,7 +92,18 @@ pub mod api_key {
     pub const GET_TELEMETRY_SUBSCRIPTIONS: i16 = 71;
     pub const PUSH_TELEMETRY: i16 = 72;
     pub const ADD_OFFSETS_TO_TXN: i16 = 25;
+    pub const WRITE_TXN_MARKERS: i16 = 27;
     pub const TXN_OFFSET_COMMIT: i16 = 28;
+    pub const VOTE: i16 = 52;
+    pub const BEGIN_QUORUM_EPOCH: i16 = 53;
+    pub const END_QUORUM_EPOCH: i16 = 54;
+    pub const ALTER_PARTITION: i16 = 56;
+    pub const ENVELOPE: i16 = 58;
+    pub const FETCH_SNAPSHOT: i16 = 59;
+    pub const BROKER_REGISTRATION: i16 = 62;
+    pub const BROKER_HEARTBEAT: i16 = 63;
+    pub const ALLOCATE_PRODUCER_IDS: i16 = 67;
+    pub const CONTROLLER_REGISTRATION: i16 = 70;
     pub const ASSIGN_REPLICAS_TO_DIRS: i16 = 73;
     pub const LIST_CONFIG_RESOURCES: i16 = 74;
     pub const DESCRIBE_TOPIC_PARTITIONS: i16 = 75;
@@ -97,6 +114,11 @@ pub mod api_key {
     pub const ADD_RAFT_VOTER: i16 = 80;
     pub const REMOVE_RAFT_VOTER: i16 = 81;
     pub const UPDATE_RAFT_VOTER: i16 = 82;
+    pub const INITIALIZE_SHARE_GROUP_STATE: i16 = 83;
+    pub const READ_SHARE_GROUP_STATE: i16 = 84;
+    pub const WRITE_SHARE_GROUP_STATE: i16 = 85;
+    pub const DELETE_SHARE_GROUP_STATE: i16 = 86;
+    pub const READ_SHARE_GROUP_STATE_SUMMARY: i16 = 87;
     pub const DESCRIBE_SHARE_GROUP_OFFSETS: i16 = 90;
     pub const ALTER_SHARE_GROUP_OFFSETS: i16 = 91;
     pub const DELETE_SHARE_GROUP_OFFSETS: i16 = 92;
@@ -298,6 +320,7 @@ pub struct ApiVersionCache {
 }
 
 impl ApiVersionCache {
+    #[must_use]
     pub fn new() -> Self {
         ApiVersionCache {
             broker_versions: HashMap::new(),
@@ -305,6 +328,7 @@ impl ApiVersionCache {
     }
 
     /// Check if we have negotiated versions for a broker.
+    #[must_use]
     pub fn contains(&self, host: &str) -> bool {
         self.broker_versions.contains_key(host)
     }
@@ -315,6 +339,11 @@ impl ApiVersionCache {
     }
 
     /// Get or fetch API versions for a broker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the broker cannot be reached or if the
+    /// `ApiVersions` response cannot be decoded.
     #[allow(dead_code)]
     pub fn get_or_fetch(
         &mut self,
@@ -327,7 +356,7 @@ impl ApiVersionCache {
             let versions = fetch_api_versions(conn, correlation_id, client_id)?;
             self.broker_versions.insert(host.to_owned(), versions);
         }
-        Ok(self.broker_versions.get(host).unwrap())
+        self.broker_versions.get(host).ok_or_else(Error::codec)
     }
 
     /// Invalidate cached versions for a broker (e.g., after reconnect).
@@ -337,6 +366,7 @@ impl ApiVersionCache {
     }
 
     /// Negotiate the best API version for a specific broker and API key.
+    #[must_use]
     #[allow(dead_code)]
     pub fn negotiate(&self, host: &str, api_key: i16, fallback: i16) -> i16 {
         self.broker_versions
@@ -346,13 +376,14 @@ impl ApiVersionCache {
 
     /// Returns the negotiated version for the given API key,
     /// falling back to a safe default if no version information is available.
+    #[must_use]
     #[allow(dead_code)]
     pub fn get_or_fallback(&self, host: &str, api_key: i16) -> i16 {
         let fallback = Self::fallback_version(api_key);
         self.negotiate(host, api_key, fallback)
     }
 
-    /// Returns the fallback (minimum supported) version for an API key.
+    /// Returns the crate's default fallback version for an API key.
     #[must_use]
     #[allow(dead_code)]
     pub fn fallback_version(api_key: i16) -> i16 {
@@ -404,6 +435,17 @@ impl ApiVersionCache {
             api_key::CONSUMER_GROUP_HEARTBEAT => API_VERSION_CONSUMER_GROUP_HEARTBEAT,
             api_key::ADD_OFFSETS_TO_TXN => API_VERSION_ADD_OFFSETS_TO_TXN,
             api_key::TXN_OFFSET_COMMIT => API_VERSION_TXN_OFFSET_COMMIT,
+            api_key::WRITE_TXN_MARKERS => API_VERSION_WRITE_TXN_MARKERS,
+            api_key::VOTE => API_VERSION_VOTE,
+            api_key::BEGIN_QUORUM_EPOCH => API_VERSION_BEGIN_QUORUM_EPOCH,
+            api_key::END_QUORUM_EPOCH => API_VERSION_END_QUORUM_EPOCH,
+            api_key::ALTER_PARTITION => API_VERSION_ALTER_PARTITION,
+            api_key::ENVELOPE => API_VERSION_ENVELOPE,
+            api_key::FETCH_SNAPSHOT => API_VERSION_FETCH_SNAPSHOT,
+            api_key::BROKER_REGISTRATION => API_VERSION_BROKER_REGISTRATION,
+            api_key::BROKER_HEARTBEAT => API_VERSION_BROKER_HEARTBEAT,
+            api_key::ALLOCATE_PRODUCER_IDS => API_VERSION_ALLOCATE_PRODUCER_IDS,
+            api_key::CONTROLLER_REGISTRATION => API_VERSION_CONTROLLER_REGISTRATION,
             api_key::CONSUMER_GROUP_DESCRIBE => API_VERSION_CONSUMER_GROUP_DESCRIBE,
             api_key::GET_TELEMETRY_SUBSCRIPTIONS => API_VERSION_GET_TELEMETRY_SUBSCRIPTIONS,
             api_key::PUSH_TELEMETRY => API_VERSION_PUSH_TELEMETRY,
@@ -413,6 +455,11 @@ impl ApiVersionCache {
             api_key::SHARE_GROUP_HEARTBEAT => API_VERSION_SHARE_GROUP_HEARTBEAT,
             api_key::SHARE_FETCH => API_VERSION_SHARE_FETCH,
             api_key::SHARE_ACKNOWLEDGE => API_VERSION_SHARE_ACKNOWLEDGE,
+            api_key::INITIALIZE_SHARE_GROUP_STATE => API_VERSION_INITIALIZE_SHARE_GROUP_STATE,
+            api_key::READ_SHARE_GROUP_STATE => API_VERSION_READ_SHARE_GROUP_STATE,
+            api_key::WRITE_SHARE_GROUP_STATE => API_VERSION_WRITE_SHARE_GROUP_STATE,
+            api_key::DELETE_SHARE_GROUP_STATE => API_VERSION_DELETE_SHARE_GROUP_STATE,
+            api_key::READ_SHARE_GROUP_STATE_SUMMARY => API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY,
             api_key::DESCRIBE_SHARE_GROUP_OFFSETS => API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
             api_key::ALTER_SHARE_GROUP_OFFSETS => API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
             api_key::DELETE_SHARE_GROUP_OFFSETS => API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
@@ -444,6 +491,7 @@ pub fn resolve_all_api_versions(cache: &ApiVersionCache, host: &str) -> ApiVersi
     resolve_security_api_versions(cache, host, &mut versions);
     resolve_transaction_api_versions(cache, host, &mut versions);
     resolve_group_api_versions(cache, host, &mut versions);
+    resolve_internal_api_versions(cache, host, &mut versions);
     versions
 }
 
@@ -603,6 +651,44 @@ fn resolve_group_api_versions(cache: &ApiVersionCache, host: &str, versions: &mu
     );
 }
 
+fn resolve_internal_api_versions(cache: &ApiVersionCache, host: &str, versions: &mut ApiVersions) {
+    macro_rules! version {
+        ($api_key:ident, $default:ident) => {
+            resolve_api_version(cache, host, api_key::$api_key, $default)
+        };
+    }
+
+    versions.write_txn_markers = version!(WRITE_TXN_MARKERS, API_VERSION_WRITE_TXN_MARKERS);
+    versions.vote = version!(VOTE, API_VERSION_VOTE);
+    versions.begin_quorum_epoch = version!(BEGIN_QUORUM_EPOCH, API_VERSION_BEGIN_QUORUM_EPOCH);
+    versions.end_quorum_epoch = version!(END_QUORUM_EPOCH, API_VERSION_END_QUORUM_EPOCH);
+    versions.alter_partition = version!(ALTER_PARTITION, API_VERSION_ALTER_PARTITION);
+    versions.envelope = version!(ENVELOPE, API_VERSION_ENVELOPE);
+    versions.fetch_snapshot = version!(FETCH_SNAPSHOT, API_VERSION_FETCH_SNAPSHOT);
+    versions.broker_registration = version!(BROKER_REGISTRATION, API_VERSION_BROKER_REGISTRATION);
+    versions.broker_heartbeat = version!(BROKER_HEARTBEAT, API_VERSION_BROKER_HEARTBEAT);
+    versions.allocate_producer_ids =
+        version!(ALLOCATE_PRODUCER_IDS, API_VERSION_ALLOCATE_PRODUCER_IDS);
+    versions.controller_registration =
+        version!(CONTROLLER_REGISTRATION, API_VERSION_CONTROLLER_REGISTRATION);
+    versions.initialize_share_group_state = version!(
+        INITIALIZE_SHARE_GROUP_STATE,
+        API_VERSION_INITIALIZE_SHARE_GROUP_STATE
+    );
+    versions.read_share_group_state =
+        version!(READ_SHARE_GROUP_STATE, API_VERSION_READ_SHARE_GROUP_STATE);
+    versions.write_share_group_state =
+        version!(WRITE_SHARE_GROUP_STATE, API_VERSION_WRITE_SHARE_GROUP_STATE);
+    versions.delete_share_group_state = version!(
+        DELETE_SHARE_GROUP_STATE,
+        API_VERSION_DELETE_SHARE_GROUP_STATE
+    );
+    versions.read_share_group_state_summary = version!(
+        READ_SHARE_GROUP_STATE_SUMMARY,
+        API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY
+    );
+}
+
 /// Resolved API versions for all supported Kafka APIs.
 #[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
@@ -656,6 +742,17 @@ pub struct ApiVersions {
     pub list_transactions: i16,
     pub add_offsets_to_txn: i16,
     pub txn_offset_commit: i16,
+    pub write_txn_markers: i16,
+    pub vote: i16,
+    pub begin_quorum_epoch: i16,
+    pub end_quorum_epoch: i16,
+    pub alter_partition: i16,
+    pub envelope: i16,
+    pub fetch_snapshot: i16,
+    pub broker_registration: i16,
+    pub broker_heartbeat: i16,
+    pub allocate_producer_ids: i16,
+    pub controller_registration: i16,
     pub consumer_group_describe: i16,
     pub list_config_resources: i16,
     pub describe_topic_partitions: i16,
@@ -663,6 +760,11 @@ pub struct ApiVersions {
     pub share_group_heartbeat: i16,
     pub share_fetch: i16,
     pub share_acknowledge: i16,
+    pub initialize_share_group_state: i16,
+    pub read_share_group_state: i16,
+    pub write_share_group_state: i16,
+    pub delete_share_group_state: i16,
+    pub read_share_group_state_summary: i16,
     pub describe_share_group_offsets: i16,
     pub alter_share_group_offsets: i16,
     pub delete_share_group_offsets: i16,
@@ -720,6 +822,17 @@ impl Default for ApiVersions {
             list_transactions: API_VERSION_LIST_TRANSACTIONS,
             add_offsets_to_txn: API_VERSION_ADD_OFFSETS_TO_TXN,
             txn_offset_commit: API_VERSION_TXN_OFFSET_COMMIT,
+            write_txn_markers: API_VERSION_WRITE_TXN_MARKERS,
+            vote: API_VERSION_VOTE,
+            begin_quorum_epoch: API_VERSION_BEGIN_QUORUM_EPOCH,
+            end_quorum_epoch: API_VERSION_END_QUORUM_EPOCH,
+            alter_partition: API_VERSION_ALTER_PARTITION,
+            envelope: API_VERSION_ENVELOPE,
+            fetch_snapshot: API_VERSION_FETCH_SNAPSHOT,
+            broker_registration: API_VERSION_BROKER_REGISTRATION,
+            broker_heartbeat: API_VERSION_BROKER_HEARTBEAT,
+            allocate_producer_ids: API_VERSION_ALLOCATE_PRODUCER_IDS,
+            controller_registration: API_VERSION_CONTROLLER_REGISTRATION,
             consumer_group_describe: API_VERSION_CONSUMER_GROUP_DESCRIBE,
             list_config_resources: API_VERSION_LIST_CONFIG_RESOURCES,
             describe_topic_partitions: API_VERSION_DESCRIBE_TOPIC_PARTITIONS,
@@ -727,6 +840,11 @@ impl Default for ApiVersions {
             share_group_heartbeat: API_VERSION_SHARE_GROUP_HEARTBEAT,
             share_fetch: API_VERSION_SHARE_FETCH,
             share_acknowledge: API_VERSION_SHARE_ACKNOWLEDGE,
+            initialize_share_group_state: API_VERSION_INITIALIZE_SHARE_GROUP_STATE,
+            read_share_group_state: API_VERSION_READ_SHARE_GROUP_STATE,
+            write_share_group_state: API_VERSION_WRITE_SHARE_GROUP_STATE,
+            delete_share_group_state: API_VERSION_DELETE_SHARE_GROUP_STATE,
+            read_share_group_state_summary: API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY,
             describe_share_group_offsets: API_VERSION_DESCRIBE_SHARE_GROUP_OFFSETS,
             alter_share_group_offsets: API_VERSION_ALTER_SHARE_GROUP_OFFSETS,
             delete_share_group_offsets: API_VERSION_DELETE_SHARE_GROUP_OFFSETS,
@@ -737,6 +855,116 @@ impl Default for ApiVersions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kafka_protocol::messages::ApiKey as KpApiKey;
+
+    const INTERNAL_GENERATED_API_METADATA: &[(i16, KpApiKey, i16, i16, i16)] = &[
+        (
+            api_key::WRITE_TXN_MARKERS,
+            KpApiKey::WriteTxnMarkers,
+            API_VERSION_WRITE_TXN_MARKERS,
+            1,
+            1,
+        ),
+        (api_key::VOTE, KpApiKey::Vote, API_VERSION_VOTE, 0, 2),
+        (
+            api_key::BEGIN_QUORUM_EPOCH,
+            KpApiKey::BeginQuorumEpoch,
+            API_VERSION_BEGIN_QUORUM_EPOCH,
+            0,
+            1,
+        ),
+        (
+            api_key::END_QUORUM_EPOCH,
+            KpApiKey::EndQuorumEpoch,
+            API_VERSION_END_QUORUM_EPOCH,
+            0,
+            1,
+        ),
+        (
+            api_key::ALTER_PARTITION,
+            KpApiKey::AlterPartition,
+            API_VERSION_ALTER_PARTITION,
+            2,
+            3,
+        ),
+        (
+            api_key::ENVELOPE,
+            KpApiKey::Envelope,
+            API_VERSION_ENVELOPE,
+            0,
+            0,
+        ),
+        (
+            api_key::FETCH_SNAPSHOT,
+            KpApiKey::FetchSnapshot,
+            API_VERSION_FETCH_SNAPSHOT,
+            0,
+            1,
+        ),
+        (
+            api_key::BROKER_REGISTRATION,
+            KpApiKey::BrokerRegistration,
+            API_VERSION_BROKER_REGISTRATION,
+            0,
+            4,
+        ),
+        (
+            api_key::BROKER_HEARTBEAT,
+            KpApiKey::BrokerHeartbeat,
+            API_VERSION_BROKER_HEARTBEAT,
+            0,
+            1,
+        ),
+        (
+            api_key::ALLOCATE_PRODUCER_IDS,
+            KpApiKey::AllocateProducerIds,
+            API_VERSION_ALLOCATE_PRODUCER_IDS,
+            0,
+            0,
+        ),
+        (
+            api_key::CONTROLLER_REGISTRATION,
+            KpApiKey::ControllerRegistration,
+            API_VERSION_CONTROLLER_REGISTRATION,
+            0,
+            0,
+        ),
+        (
+            api_key::INITIALIZE_SHARE_GROUP_STATE,
+            KpApiKey::InitializeShareGroupState,
+            API_VERSION_INITIALIZE_SHARE_GROUP_STATE,
+            0,
+            0,
+        ),
+        (
+            api_key::READ_SHARE_GROUP_STATE,
+            KpApiKey::ReadShareGroupState,
+            API_VERSION_READ_SHARE_GROUP_STATE,
+            0,
+            0,
+        ),
+        (
+            api_key::WRITE_SHARE_GROUP_STATE,
+            KpApiKey::WriteShareGroupState,
+            API_VERSION_WRITE_SHARE_GROUP_STATE,
+            0,
+            0,
+        ),
+        (
+            api_key::DELETE_SHARE_GROUP_STATE,
+            KpApiKey::DeleteShareGroupState,
+            API_VERSION_DELETE_SHARE_GROUP_STATE,
+            0,
+            0,
+        ),
+        (
+            api_key::READ_SHARE_GROUP_STATE_SUMMARY,
+            KpApiKey::ReadShareGroupStateSummary,
+            API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY,
+            0,
+            0,
+        ),
+    ];
 
     #[test]
     fn broker_api_versions_from_response_empty() {
@@ -977,6 +1205,55 @@ mod tests {
     }
 
     #[test]
+    fn api_versions_default_has_expected_internal_fields() {
+        let v = ApiVersions::default();
+        assert_eq!(v.write_txn_markers, API_VERSION_WRITE_TXN_MARKERS);
+        assert_eq!(v.vote, API_VERSION_VOTE);
+        assert_eq!(v.begin_quorum_epoch, API_VERSION_BEGIN_QUORUM_EPOCH);
+        assert_eq!(v.end_quorum_epoch, API_VERSION_END_QUORUM_EPOCH);
+        assert_eq!(v.alter_partition, API_VERSION_ALTER_PARTITION);
+        assert_eq!(v.envelope, API_VERSION_ENVELOPE);
+        assert_eq!(v.fetch_snapshot, API_VERSION_FETCH_SNAPSHOT);
+        assert_eq!(v.broker_registration, API_VERSION_BROKER_REGISTRATION);
+        assert_eq!(v.broker_heartbeat, API_VERSION_BROKER_HEARTBEAT);
+        assert_eq!(v.allocate_producer_ids, API_VERSION_ALLOCATE_PRODUCER_IDS);
+        assert_eq!(
+            v.controller_registration,
+            API_VERSION_CONTROLLER_REGISTRATION
+        );
+        assert_eq!(
+            v.initialize_share_group_state,
+            API_VERSION_INITIALIZE_SHARE_GROUP_STATE
+        );
+        assert_eq!(v.read_share_group_state, API_VERSION_READ_SHARE_GROUP_STATE);
+        assert_eq!(
+            v.write_share_group_state,
+            API_VERSION_WRITE_SHARE_GROUP_STATE
+        );
+        assert_eq!(
+            v.delete_share_group_state,
+            API_VERSION_DELETE_SHARE_GROUP_STATE
+        );
+        assert_eq!(
+            v.read_share_group_state_summary,
+            API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY
+        );
+    }
+
+    #[test]
+    fn internal_generated_api_metadata_matches_kafka_protocol_018() {
+        for &(api_key, expected_api_key, fallback, min, max) in INTERNAL_GENERATED_API_METADATA {
+            let parsed = KpApiKey::try_from(api_key).expect("known kafka protocol API key");
+            let range = parsed.valid_versions();
+
+            assert_eq!(parsed, expected_api_key);
+            assert_eq!((range.min, range.max), (min, max));
+            assert_eq!(parsed.request_header_version(fallback), 2);
+            assert_eq!(parsed.response_header_version(fallback), 1);
+        }
+    }
+
+    #[test]
     fn resolve_all_api_versions_uses_defaults_for_unknown_broker() {
         let cache = ApiVersionCache::new();
         let v = resolve_all_api_versions(&cache, "unknown");
@@ -1035,10 +1312,32 @@ mod tests {
         assert_eq!(v.list_transactions, d.list_transactions);
         assert_eq!(v.add_offsets_to_txn, d.add_offsets_to_txn);
         assert_eq!(v.txn_offset_commit, d.txn_offset_commit);
+        assert_eq!(v.write_txn_markers, d.write_txn_markers);
+        assert_eq!(v.vote, d.vote);
+        assert_eq!(v.begin_quorum_epoch, d.begin_quorum_epoch);
+        assert_eq!(v.end_quorum_epoch, d.end_quorum_epoch);
+        assert_eq!(v.alter_partition, d.alter_partition);
+        assert_eq!(v.envelope, d.envelope);
+        assert_eq!(v.fetch_snapshot, d.fetch_snapshot);
+        assert_eq!(v.broker_registration, d.broker_registration);
+        assert_eq!(v.broker_heartbeat, d.broker_heartbeat);
+        assert_eq!(v.allocate_producer_ids, d.allocate_producer_ids);
+        assert_eq!(v.controller_registration, d.controller_registration);
         assert_eq!(v.consumer_group_describe, d.consumer_group_describe);
         assert_eq!(v.list_config_resources, d.list_config_resources);
         assert_eq!(v.describe_topic_partitions, d.describe_topic_partitions);
         assert_eq!(v.share_group_describe, d.share_group_describe);
+        assert_eq!(
+            v.initialize_share_group_state,
+            d.initialize_share_group_state
+        );
+        assert_eq!(v.read_share_group_state, d.read_share_group_state);
+        assert_eq!(v.write_share_group_state, d.write_share_group_state);
+        assert_eq!(v.delete_share_group_state, d.delete_share_group_state);
+        assert_eq!(
+            v.read_share_group_state_summary,
+            d.read_share_group_state_summary
+        );
         assert_eq!(
             v.describe_share_group_offsets,
             d.describe_share_group_offsets
@@ -1135,6 +1434,26 @@ mod tests {
             (api_key::LIST_TRANSACTIONS, API_VERSION_LIST_TRANSACTIONS),
             (api_key::ADD_OFFSETS_TO_TXN, API_VERSION_ADD_OFFSETS_TO_TXN),
             (api_key::TXN_OFFSET_COMMIT, API_VERSION_TXN_OFFSET_COMMIT),
+            (api_key::WRITE_TXN_MARKERS, API_VERSION_WRITE_TXN_MARKERS),
+            (api_key::VOTE, API_VERSION_VOTE),
+            (api_key::BEGIN_QUORUM_EPOCH, API_VERSION_BEGIN_QUORUM_EPOCH),
+            (api_key::END_QUORUM_EPOCH, API_VERSION_END_QUORUM_EPOCH),
+            (api_key::ALTER_PARTITION, API_VERSION_ALTER_PARTITION),
+            (api_key::ENVELOPE, API_VERSION_ENVELOPE),
+            (api_key::FETCH_SNAPSHOT, API_VERSION_FETCH_SNAPSHOT),
+            (
+                api_key::BROKER_REGISTRATION,
+                API_VERSION_BROKER_REGISTRATION,
+            ),
+            (api_key::BROKER_HEARTBEAT, API_VERSION_BROKER_HEARTBEAT),
+            (
+                api_key::ALLOCATE_PRODUCER_IDS,
+                API_VERSION_ALLOCATE_PRODUCER_IDS,
+            ),
+            (
+                api_key::CONTROLLER_REGISTRATION,
+                API_VERSION_CONTROLLER_REGISTRATION,
+            ),
             (
                 api_key::CONSUMER_GROUP_DESCRIBE,
                 API_VERSION_CONSUMER_GROUP_DESCRIBE,
@@ -1150,6 +1469,26 @@ mod tests {
             (
                 api_key::SHARE_GROUP_DESCRIBE,
                 API_VERSION_SHARE_GROUP_DESCRIBE,
+            ),
+            (
+                api_key::INITIALIZE_SHARE_GROUP_STATE,
+                API_VERSION_INITIALIZE_SHARE_GROUP_STATE,
+            ),
+            (
+                api_key::READ_SHARE_GROUP_STATE,
+                API_VERSION_READ_SHARE_GROUP_STATE,
+            ),
+            (
+                api_key::WRITE_SHARE_GROUP_STATE,
+                API_VERSION_WRITE_SHARE_GROUP_STATE,
+            ),
+            (
+                api_key::DELETE_SHARE_GROUP_STATE,
+                API_VERSION_DELETE_SHARE_GROUP_STATE,
+            ),
+            (
+                api_key::READ_SHARE_GROUP_STATE_SUMMARY,
+                API_VERSION_READ_SHARE_GROUP_STATE_SUMMARY,
             ),
             (
                 api_key::DESCRIBE_SHARE_GROUP_OFFSETS,

@@ -580,6 +580,8 @@ Optional variants expose the highest fields currently wired from `kafka-protocol
 - `assign_replicas_to_dirs(options)` for explicit broker log directory placement.
 - `add_raft_voter(options)`, `remove_raft_voter(options)`, and `update_raft_voter(options)` for explicit KRaft
   quorum voter administration.
+- `send_raw_protocol_request(api_key, api_version, request)` for advanced typed access to generated
+  `kafka-protocol` requests that do not have a stable high-level client workflow.
 - `alter_configs(options)` is deprecated; prefer `incremental_alter_configs(options)`.
 
 ### 4.3 Topic create/delete

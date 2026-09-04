@@ -62,16 +62,16 @@ pub use rustfs_kafka::client::{
     AlterShareGroupOffsetPartition, AlterShareGroupOffsetPartitionResult,
     AlterShareGroupOffsetTopic, AlterShareGroupOffsetTopicResult,
     AlterShareGroupOffsetsResponseData, AlterUserScramCredentialResult,
-    AlterUserScramCredentialsOptions, AlterUserScramCredentialsResponseData,
-    ApiVersionsResponseData, AssignReplicasToDirsOptions, AssignReplicasToDirsResponseData,
-    BrokerApiVersion, CLIENT_QUOTA_MATCH_ANY_SPECIFIED, CLIENT_QUOTA_MATCH_DEFAULT,
-    CLIENT_QUOTA_MATCH_EXACT, CONFIG_OPERATION_APPEND, CONFIG_OPERATION_DELETE,
-    CONFIG_OPERATION_SET, CONFIG_OPERATION_SUBTRACT, CONFIG_RESOURCE_TYPE_BROKER,
-    CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC, ClientQuotaAlteration,
-    ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter, ClientQuotaEntitySpec,
-    ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry, ConfigResource, ConfigSynonym,
-    ConsumerGroupAssignment, ConsumerGroupDescribeResponseData, ConsumerGroupDescription,
-    ConsumerGroupHeartbeatOptions, ConsumerGroupHeartbeatResponseData,
+    AlterUserScramCredentialsOptions, AlterUserScramCredentialsResponseData, ApiVersionCache,
+    ApiVersions, ApiVersionsResponseData, AssignReplicasToDirsOptions,
+    AssignReplicasToDirsResponseData, BrokerApiVersion, CLIENT_QUOTA_MATCH_ANY_SPECIFIED,
+    CLIENT_QUOTA_MATCH_DEFAULT, CLIENT_QUOTA_MATCH_EXACT, CONFIG_OPERATION_APPEND,
+    CONFIG_OPERATION_DELETE, CONFIG_OPERATION_SET, CONFIG_OPERATION_SUBTRACT,
+    CONFIG_RESOURCE_TYPE_BROKER, CONFIG_RESOURCE_TYPE_BROKER_LOGGER, CONFIG_RESOURCE_TYPE_TOPIC,
+    ClientQuotaAlteration, ClientQuotaAlterationOp, ClientQuotaEntity, ClientQuotaEntityFilter,
+    ClientQuotaEntitySpec, ClientQuotaEntry, ClientQuotaValue, ClusterBroker, ConfigEntry,
+    ConfigResource, ConfigSynonym, ConsumerGroupAssignment, ConsumerGroupDescribeResponseData,
+    ConsumerGroupDescription, ConsumerGroupHeartbeatOptions, ConsumerGroupHeartbeatResponseData,
     ConsumerGroupMemberDescription, ConsumerGroupTopicPartitions, CreateAclResult,
     CreateAclsResponseData, CreateDelegationTokenOptions, CreateDelegationTokenResponseData,
     CreatePartitionsOptions, CreatePartitionsResponseData, CreatePartitionsTopicResult,
@@ -125,9 +125,10 @@ pub use rustfs_kafka::client::{
     TxnOffsetCommitPartitionResult, TxnOffsetCommitResponseData, TxnOffsetCommitTopicPartition,
     TxnOffsetCommitTopicResult, UnregisterBrokerResponseData, UpdateFeaturesResponseData,
     UpdateFeaturesResult, UpdateRaftVoterOptions, UpdateRaftVoterResponseData,
-    UserScramCredentialsDescription,
+    UserScramCredentialsDescription, api_key,
 };
 pub use rustfs_kafka::error;
+pub use rustfs_kafka::kafka_protocol;
 pub use rustfs_kafka::producer::{AsBytes, Headers, Record};
 
 #[cfg(test)]
@@ -278,5 +279,9 @@ mod public_reexports_tests {
 
         let share_delete = DeleteShareGroupOffsetTopic::new("topic-a");
         assert_eq!(share_delete.topic_name, "topic-a");
+
+        let fallback_snapshot = ApiVersionCache::fallback_version(api_key::FETCH_SNAPSHOT);
+        assert_eq!(fallback_snapshot, ApiVersions::default().fetch_snapshot);
+        let _generated_request = kafka_protocol::messages::FetchSnapshotRequest::default();
     }
 }

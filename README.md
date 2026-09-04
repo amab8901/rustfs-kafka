@@ -32,6 +32,8 @@ rustfs-kafka-async = "1.2.0"
   partition expansion, record deletion,
   leader election, leader-epoch offsets, active producer, transaction offset commit, consumer group deletion/inspection,
   and share group inspection/mutation APIs.
+- Typed raw `kafka-protocol` request support for advanced generated protocol messages that do not
+  have a stable high-level client workflow.
 - High-level `Consumer` and `Producer` abstractions.
 - TLS support via rustls:
     - `security` (default, aws-lc-rs provider, `webpki-roots` trust store)

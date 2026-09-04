@@ -1013,7 +1013,6 @@ version = "1.2.0"
 dependencies = [
  "base64",
  "bytes",
- "ctor",
  "hmac",
  "kafka-protocol",
  "metrics",
@@ -1025,7 +1024,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tracing",
- "tracing-subscriber",
  "uuid",
  "webpki-roots",
 ]

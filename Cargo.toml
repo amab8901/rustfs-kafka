@@ -64,3 +64,6 @@ anyhow = "1.0.104"
 proptest = "1.11.0"
 criterion = { version = "0.8.2", features = ["html_reports"] }
 temp-env = "0.3.6"
+
+[workspace.metadata.cargo-shear]
+ignored = ["rustfs-kafka-async"]
