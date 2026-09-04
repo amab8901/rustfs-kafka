@@ -244,7 +244,7 @@ impl Config {
             Err(e) => return Err(e.to_string()),
         };
         if m.opt_present("help") {
-            let brief = format!("{} [options]", &args[0]);
+            let brief = format!("{} [options]", args[0]);
             return Err(opts.usage(&brief));
         }
         Ok(Config {

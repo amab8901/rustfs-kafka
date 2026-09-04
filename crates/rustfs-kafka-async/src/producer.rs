@@ -166,6 +166,10 @@ impl AsyncProducerBuilder {
     }
 
     /// Backward-compatible no-op kept for API compatibility.
+    #[deprecated(
+        since = "1.2.0",
+        note = "native async producers no longer use an internal channel; this setting is ignored"
+    )]
     #[must_use]
     pub fn with_channel_capacity(mut self, channel_capacity: usize) -> Self {
         self.channel_capacity = channel_capacity.max(1);
@@ -173,6 +177,10 @@ impl AsyncProducerBuilder {
     }
 
     /// Backward-compatible setting kept for API compatibility.
+    #[deprecated(
+        since = "1.2.0",
+        note = "native async producers are always enabled; this setting is ignored"
+    )]
     #[must_use]
     pub fn with_native_async(mut self, native_async: bool) -> Self {
         self.native_async = native_async;
@@ -540,6 +548,7 @@ fn build_single_produce_request(
     let record = KpRecord {
         transactional: false,
         control: false,
+        delete_horizon: false,
         partition_leader_epoch: -1,
         producer_id: -1,
         producer_epoch: -1,

@@ -61,7 +61,7 @@ fn run(cfg: &Config) -> Result<()> {
 
     // ~ otherwise let's loop over the topic partition offsets
     let num_partitions = match client.topics().partitions(&cfg.topic) {
-        None => return Err(anyhow!("no such topic: {}", &cfg.topic)),
+        None => return Err(anyhow!("no such topic: {}", cfg.topic)),
         Some(partitions) => partitions.len(),
     };
     let mut state = State::new(num_partitions, cfg.committed_not_consumed);

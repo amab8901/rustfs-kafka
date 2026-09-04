@@ -121,6 +121,8 @@ async fn main() -> rustfs_kafka::error::Result<()> {
 
 - Default TLS feature: `security` (rustls + aws-lc-rs).
 - Alternative TLS provider: `security-ring`.
+- Default trust roots come from `webpki-roots`; configure private or enterprise CAs with
+  `SecurityConfig::with_ca_cert`.
 - Disable all default features:
 
 ```toml

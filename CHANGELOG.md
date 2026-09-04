@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Added read-only Kafka management APIs on `KafkaClient` using `kafka-protocol` generated messages:
+  - `fetch_api_versions`
+  - `describe_cluster` / `describe_cluster_with_options`
+  - `describe_acls` / `describe_acls_with_filter`
+  - `create_acls`
+  - `delete_acls`
+  - `describe_configs` / `describe_configs_with_options`
+  - `incremental_alter_configs`
+  - `list_config_resources` / `list_config_resources_for`
+  - `describe_delegation_tokens` / `describe_delegation_tokens_for`
+  - `describe_log_dirs` / `describe_log_dirs_for`
+  - `describe_quorum`
+  - `create_partitions` / `create_partitions_with_options`
+  - `delete_records`
+  - `elect_leaders` / `elect_preferred_leaders` / `elect_unclean_leaders`
+  - `alter_partition_reassignments`
+  - `list_partition_reassignments` / `list_partition_reassignments_for`
+  - `offsets_for_leader_epochs`
+  - `describe_client_quotas` / `describe_client_quotas_with_options`
+  - `alter_client_quotas`
+  - `describe_user_scram_credentials` / `describe_user_scram_credentials_for`
+  - `alter_user_scram_credentials`
+  - `describe_producers`
+  - `list_transactions` / `list_transactions_with_options`
+  - `describe_transactions`
+  - `add_offsets_to_txn`
+  - `txn_offset_commit`
+  - `describe_topic_partitions` / `describe_topic_partitions_with_options`
+  - `describe_consumer_groups` / `describe_consumer_groups_with_options`
+  - `describe_share_groups` / `describe_share_groups_with_options`
+  - `describe_share_group_offsets` / `describe_share_group_offsets_with_options`
+  - `alter_share_group_offsets`
+  - `delete_share_group_offsets`
+  - `alter_replica_log_dirs`
+  - `update_features`
+  - `unregister_broker`
+  - `assign_replicas_to_dirs`
+  - `add_raft_voter` / `remove_raft_voter` / `update_raft_voter`
+  - `list_groups` / `list_groups_with_filters`
+  - `delete_groups`
+  - `describe_groups` / `describe_groups_with_options`
+  - `delete_group_offsets`
+  - `get_telemetry_subscriptions`
+  - `push_telemetry`
+  - `consumer_group_heartbeat`
+  - `share_group_heartbeat`
+  - `share_fetch`
+  - `share_acknowledge`
+- Added `KafkaClient::send_raw_protocol_request` for advanced typed access to generated
+  `kafka-protocol` requests that are not represented by stable high-level client APIs.
+- Added API version defaults and `api_key` constants for remaining generated broker, controller,
+  coordinator, raft, and share-state protocol messages.
+- Added public response data types for broker API versions, cluster brokers, config resources/entries, config resource
+  discovery, listed groups, deleted groups, described groups, described group members, ACL resources, ACL mutation
+  results, config mutation results, delegation tokens, log directory diagnostics, KRaft quorum state, topic partition
+  discovery, partition reassignments, partition reassignment mutations, partition expansion, record deletion,
+  leader election, leader-epoch offset lookup, client quotas, client quota mutation results, SCRAM credential metadata,
+  SCRAM credential mutation results, active producers, transactions, transactional offset commit results,
+  committed-offset deletion results, modern consumer group descriptions, share group descriptions, share group offsets,
+  share group offset mutation results, low-level modern consumer/share-consumer protocol results, cluster feature
+  updates, KRaft broker lifecycle/voter operations, replica directory assignment results, and low-level telemetry
+  subscription/push results.
+- `rustfs-kafka-async` now re-exports the sync crate's public admin and diagnostic data types for convenience.
+- Added `docs/protocol-coverage.md` to track `kafka-protocol` `0.18.0` API coverage and prioritize remaining
+  client-facing protocol work.
+
+### Changed
+
+- Upgraded `kafka-protocol` from `0.17.0` to `0.18.0` and updated Produce record construction for the new
+  `delete_horizon` record field.
+- Default TLS root loading now uses the bundled `webpki-roots` set plus explicit `ca_cert_path` configuration only.
+  `rustls-native-certs` and its platform-specific transitive crates are no longer dependencies.
+- `rustfs-kafka-async` now re-exports `TlsConfig` alongside `SecurityConfig` for easier async TLS configuration.
+- Bumped workspace dependencies:
+  - `rustls`: `0.23.39` -> `0.23.40`
+  - `metrics`: `0.24.3` -> `0.24.6`
+  - `tokio`: `1.52.1` -> `1.52.3`
+  - `ctor`: `0.10.1` -> `1.0.6`
+- Updated CI benchmark workflow artifact upload action:
+  - `actions/upload-artifact`: `v4` -> `v6`
+
+### Fixed
+
+- Updated integration test ctor annotation to match `ctor` `1.x` requirements:
+  - `#[ctor::ctor]` -> `#[ctor::ctor(unsafe)]` in `crates/rustfs-kafka/tests/test_kafka.rs`
+
+### Deprecated
+
+- Deprecated `KafkaClient::alter_configs`; use `KafkaClient::incremental_alter_configs` for new config mutations.
+- Deprecated async builder compatibility toggles that are ignored by the native async implementation:
+  - `AsyncProducerBuilder::with_channel_capacity`
+  - `AsyncProducerBuilder::with_native_async`
+  - `AsyncConsumerBuilder::with_channel_capacity`
+  - `AsyncConsumerBuilder::with_native_async`
+
 ## [1.2.0] - 2026-04-23
 
 ### Added
